@@ -18,7 +18,7 @@ public partial class AutoRunWindow
         bool installed = statuses.Exists(status => status.IsInstalled);
         string label = newer ? "Skills Newer" : current ? "Reinstall Skills" : installed ? "Update Skills" : "Install Skills";
         string tooltip = newer ? "An installed Skill is newer than this bundle. Update the Unity package first."
-            : "Install gen-script and run-script as one batch. A failed install restores previous versions.";
+            : "Install gen-script, edit-script and run-script as one batch. A failed install restores previous versions.";
         using (new EditorGUI.DisabledScope(!valid || newer))
         {
             if (!GUILayout.Button(new GUIContent(label, tooltip), GUILayout.Width(120))) return;

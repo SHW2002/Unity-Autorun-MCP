@@ -73,6 +73,8 @@ public partial class AutoRunWindow
             GUILayout.MinWidth(0),
             GUILayout.ExpandWidth(true)
         );
+        GUILayout.Space(4);
+        RenderAgentInstructionsControls();
     }
 
     private void LoadMcpInstallTargetPath()
@@ -180,6 +182,7 @@ public partial class AutoRunWindow
             RefreshMcpProcesses();
             _mcpVersionRefreshRequested = true;
             InvalidateSkillInstallStatus();
+            InvalidateAgentInstructionsStatus();
         }
         if (!_showMcpSettings)
         {

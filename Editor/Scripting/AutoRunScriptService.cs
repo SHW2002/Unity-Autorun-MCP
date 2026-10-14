@@ -22,6 +22,7 @@ namespace UnityAutorun.Scripting
         private static AutoRunScriptRunner _runner;
         private static StoredRequest _activeRequest;
         private static bool _initialized;
+        private static bool _runStateAvailable;
         private static bool _refreshing;
         private static bool _catalogDirty;
         private static double _nextCatalogRefreshAt;
@@ -46,6 +47,12 @@ namespace UnityAutorun.Scripting
         public static long CatalogRevision { get { EnsureInitialized(); return _catalogRevision; } }
         public static long RunsRevision { get { EnsureInitialized(); return _runsRevision; } }
         public static bool HasActiveRun { get { EnsureInitialized(); return _activeRequest != null && !_activeRequest.Status.IsTerminal; } }
+        /// <summary>Read known run state without forcing catalog initialization from a Bridge response.</summary>
+        public static bool TryGetActiveRunState(out bool hasActiveRun)
+        {
+            hasActiveRun = _activeRequest != null && !_activeRequest.Status.IsTerminal;
+            return _runStateAvailable;
+        }
         public static List<string> CatalogErrors { get { EnsureInitialized(); return new List<string>(Errors); } }
         public static List<AutoRunScriptDefinition> List() { EnsureInitialized(); return new List<AutoRunScriptDefinition>(Definitions); }
         public static List<AutoRunScriptRunStatus> ListRuns()
@@ -72,7 +79,7 @@ namespace UnityAutorun.Scripting
             if (_initialized) return;
             _initialized = true;
             _runner = new AutoRunScriptRunner(new AutoRunScriptDefinition[0], new AutoRunUnityScriptHost(), () => EditorApplication.timeSinceStartup);
-            RestoreRequests();
+            _runStateAvailable = RestoreRequests();
             Refresh();
             if (Requests.Count > 0) NotifyRunsChanged();
         }
@@ -370,12 +377,12 @@ namespace UnityAutorun.Scripting
             SessionState.SetString(SessionKey, JsonUtility.ToJson(new StoredRequests { Requests = Requests.Values.ToList() }));
             _lastSessionSaveAt = EditorApplication.timeSinceStartup;
         }
-        private static void RestoreRequests()
+        private static bool RestoreRequests()
         {
-            string json = SessionState.GetString(SessionKey, string.Empty);
-            if (string.IsNullOrEmpty(json)) return;
             try
             {
+                string json = SessionState.GetString(SessionKey, string.Empty);
+                if (string.IsNullOrEmpty(json)) return true;
                 StoredRequests saved = JsonUtility.FromJson<StoredRequests>(json);
                 foreach (StoredRequest request in saved.Requests ?? new List<StoredRequest>())
                 {
@@ -395,8 +402,13 @@ namespace UnityAutorun.Scripting
                         else FailPending(request, "script_session_conflict", "Multiple pending runs were found in the session; only the latest initial startup request may resume.");
                     }
                 }
+                return true;
             }
-            catch (Exception exception) { Debug.LogError("AutoRun script session could not be restored: " + exception.Message); }
+            catch (Exception exception)
+            {
+                Debug.LogError("AutoRun script session could not be restored: " + exception.Message);
+                return false;
+            }
         }
 
         private static void RememberRecent(StoredRequest request)

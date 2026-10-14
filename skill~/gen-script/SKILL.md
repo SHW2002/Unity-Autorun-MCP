@@ -1,6 +1,6 @@
 ---
 name: gen-script
-description: Generate and self-test reusable Unity Autorun C# business scripts for a specific UI or project automation flow. Use when the user requests a new automation script or a new flow; compile through Unity, run the requested self-test, and repair only code created by this task. Running an existing script belongs to run-script.
+description: Generate and self-test reusable Unity Autorun C# business scripts for a specific UI or project automation flow. Use when the user authorizes a new automation script or a new flow; compile through Unity, self-test and repair only code created by this task. Running an existing script belongs to run-script; maintaining an existing business script belongs to edit-script.
 ---
 
 # Generate Unity Autorun Scripts
@@ -8,6 +8,8 @@ description: Generate and self-test reusable Unity Autorun C# business scripts f
 Create one concrete, named business flow in the host project's `Assets/Editor/AutorunScripts/` and prove its requested result. The Unity Editor compiles and runs the C# code; the MCP server provides commands and contracts rather than deciding business navigation. Existing scripts under the older `Assets/AutorunScripts/Editor/` directory remain available for discovery and reuse; do not move or rewrite them as part of generation.
 
 Read `get_script_guidance` once and [references/script-contract.md](references/script-contract.md) before authoring. The live contract and tool schemas take precedence over the bundled example.
+
+For routine operation or self-testing, first inspect `list_scripts` and `get_script(includeSource=true)` for an existing script whose complete start, flow, parameters and assertions match. Run a usable match through `run-script`. If no match exists, report that finding and ask whether the user wants a new self-test script; do not silently generate one. An explicit request to create a new script already authorizes generation. Repairing a user-specified existing business script while preserving its contract belongs to `edit-script`; a changed start or business contract receives a new ID/file here.
 
 ## Define and inspect the flow
 

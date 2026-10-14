@@ -6,7 +6,7 @@ This reference is self-contained within the installed Skill. Use the connected M
 
 New business sources use `Assets/Editor/AutorunScripts/`. Existing sources under `Assets/AutorunScripts/Editor/` remain compatible for discovery, source inspection and execution. Use the registered `sourcePath` and script ID without relocating files.
 
-`list_scripts` supports kind `business`, `basic`, or `all`, plus `query`. `get_script` accepts `scriptId` and `includeSource`. Check its exact starting conditions, `preparePlayMode` flag, parameter reads, declared dependencies, final assertions and `validationError`. Business scripts must declare Preconditions and override CheckPreconditions. Built-ins include `start-play-mode`, `click-button`, `wait`, `wait-for-ui-state`, `screenshot`, `stop-play-mode`, and `log`; do not substitute them for an existing business flow without the user's requested scope supporting that action.
+`list_scripts` supports kind `business`, `basic`, or `all`, plus `query`. `get_script` accepts `scriptId` and `includeSource`; use `includeSource=true` when establishing the complete matching flow. Check its exact starting conditions, `preparePlayMode` flag, parameter reads, declared dependencies, final assertions and `validationError`. Business scripts must declare Preconditions and override CheckPreconditions. Built-ins include `start-play-mode`, `click-button`, `wait`, `wait-for-ui-state`, `screenshot`, `stop-play-mode`, and `log`; do not substitute them for an existing business flow without the user's requested scope supporting that action.
 
 ## Run
 
@@ -34,4 +34,4 @@ Example arguments:
 
 Use the script's final assertions or narrow `get_ui_state`/`wait_for_ui_state` queries for user-requested evidence. UIState supports uGUI and optional TextMeshPro; it does not prove pixel appearance or arbitrary non-UI business state. Use actual project assertions or screenshot review when required by the request. Sensitive UI values remain masked unless the user explicitly authorizes reading them.
 
-Do not modify code when compilation, dependencies, preconditions, or assertions fail. Preserve the result and describe the smallest missing requirement. Generating and self-testing a new flow belongs to `gen-script`.
+Do not modify code when compilation, dependencies, preconditions, or assertions fail. Preserve the result and describe the smallest missing requirement. If no complete matching script exists, ask whether the user wants a new self-test script rather than creating it silently. Generating a new flow belongs to `gen-script`; maintaining a user-specified existing business script while preserving its contract belongs to `edit-script`, each after the corresponding authorization.

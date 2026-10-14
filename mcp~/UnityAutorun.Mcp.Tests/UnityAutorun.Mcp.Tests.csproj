@@ -11,6 +11,9 @@
     <ProjectReference Include="..\UnityAutorun.Mcp\UnityAutorun.Mcp.csproj" />
     <Compile Include="..\..\Editor\McpInstall\JsonObjectUpdater.cs" Link="src\EditorInstall\JsonObjectUpdater.cs" />
     <Compile Include="..\..\Editor\McpInstall\McpInstallService.cs" Link="src\EditorInstall\McpInstallService.cs" />
+    <Compile Include="..\..\Editor\AgentInstructions\AgentInstructionsInstallService.cs" Link="src\EditorInstall\AgentInstructionsInstallService.cs" />
+    <Compile Include="..\..\Editor\SkillInstall\SkillInstallService.cs" Link="src\EditorInstall\SkillInstallService.cs" />
+    <Compile Include="..\..\Editor\Versioning\AutoRunVersionComparer.cs" Link="src\EditorInstall\AutoRunVersionComparer.cs" />
     <Compile Include="..\..\Scripting\**\*.cs" Link="src\ScriptRuntime\%(RecursiveDir)%(Filename)%(Extension)" />
   </ItemGroup>
 

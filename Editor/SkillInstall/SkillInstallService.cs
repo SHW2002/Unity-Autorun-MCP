@@ -36,7 +36,7 @@ public static class SkillInstallService
 {
     public const string SkillName = "gen-script";
     public const string VersionFileName = "skill-version.json";
-    private static readonly string[] Names = { "gen-script", "run-script" };
+    private static readonly string[] Names = { "gen-script", "edit-script", "run-script" };
 
     public static List<SkillInstallStatus> GetStatuses(string targetFolder)
     {
@@ -119,7 +119,7 @@ public static class SkillInstallService
             catch (Exception exception) { warnings.Add(plan.Status.Name + ": " + exception.Message); }
         }
         CleanupEmptyDirectories(plans);
-        message = "Installed gen-script and run-script for " + plans[0].Status.ClientName + ".";
+        message = "Installed " + string.Join(", ", Names) + " for " + plans[0].Status.ClientName + ".";
         if (HasLegacySkill(targetFolder)) message += " Legacy unity-autorun was preserved; uninstall it manually after reviewing custom changes.";
         if (warnings.Count > 0) message += " Backup cleanup skipped: " + string.Join("; ", warnings.ToArray());
         return true;

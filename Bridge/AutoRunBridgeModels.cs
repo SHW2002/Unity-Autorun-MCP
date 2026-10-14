@@ -73,6 +73,8 @@ public sealed class AutoRunBridgeData
     public string uiStateExpected;
     public string uiStateActual;
     public bool isCompiling;
+    public bool hasActiveScriptRun;
+    public bool scriptRunStateAvailable;
     public List<string> compilerMessages = new();
     public List<AutoRunBridgeScriptInfo> scripts = new();
     public AutoRunBridgeScriptInfo script;

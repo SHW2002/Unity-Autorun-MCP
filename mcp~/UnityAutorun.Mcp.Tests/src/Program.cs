@@ -35,6 +35,8 @@ namespace UnityAutorun.Mcp.Tests
         private static int Main()
         {
             Tests.AddRange(ScriptRuntimeTests.Cases());
+            Tests.AddRange(AgentInstructionsInstallTests.Cases());
+            Tests.AddRange(SkillInstallTests.Cases());
             int failed = 0;
             foreach ((string name, Action test) in Tests)
             {
@@ -350,7 +352,7 @@ namespace UnityAutorun.Mcp.Tests
                 JsonObject data = ScriptGuidance.Get()["data"].AsObject();
                 AssertEqual(ProjectPaths.GeneratedScriptsRelativePath, Text(data, "scriptDirectory"), "Guidance uses the wrong host directory.");
                 AssertEqual(ProjectPaths.LegacyGeneratedScriptsRelativePath, Text(data, "legacyScriptDirectory"), "Guidance omits the compatible legacy source directory.");
-                AssertEqual("gen-script,run-script", string.Join(",", data["skills"].AsArray().Select(value => value.GetValue<string>())), "Guidance has obsolete skill names.");
+                AssertEqual("gen-script,edit-script,run-script", string.Join(",", data["skills"].AsArray().Select(value => value.GetValue<string>())), "Guidance has obsolete skill names.");
                 string contract = data.ToJsonString();
                 AssertTrue(contract.Contains("CheckPreconditions") && contract.Contains("Never edit reused scripts"), "Strict business-flow contract is missing.");
                 AssertTrue(ScriptGuidance.Template.Contains("AutoRunScriptKind.Business") && ScriptGuidance.Template.Contains("context.Call"), "Template omits runtime composition.");

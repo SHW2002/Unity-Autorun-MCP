@@ -18,11 +18,20 @@ Requires Unity 2021.3 or newer, [Git](https://git-scm.com/downloads), and the [.
 3. Wait for import and compilation, then open `Window > Auto Run Window`.
 4. Expand `Connection > MCP Settings & Diagnostics`, then press `Tools > Publish MCP` to build the current server.
 5. Under `Install` in the expanded section, select the project's `.codex` or Claude Code `.claude` directory, then press `Install MCP` and `Install Skills`.
-6. Reconnect the AI client. Confirm `Bridge` is `Running` and `Processes` shows its MCP process. `Versions` displays separate MCP, `gen-script`, and `run-script` versions and installation states.
+6. To make agents check existing scripts before game/UI self-tests, press `Install Agent Rules` in the separate `Agent Rules` row. It writes instructions to `AGENTS.md` at the current host Unity project root, independently of the client directory and `Install Skills`.
+7. Reconnect the AI client. Confirm `Bridge` is `Running` and `Processes` shows its MCP process. `Versions` displays separate MCP, `gen-script`, `edit-script`, and `run-script` versions and installation states.
 
-`Install Skills` installs both independent Skills into `.agents/skills/` beside the selected `.codex` directory, or into `.claude/skills/` for Claude Code. It validates and stages the whole batch before replacing installed versions, rolls back the entire batch on an exchange failure, and refuses to overwrite a newer installed Skill. Existing `unity-autorun` installations are preserved with a manual removal notice so custom changes are not deleted.
+`Install Skills` installs all three independent Skills into `.agents/skills/` beside the selected `.codex` directory, or into `.claude/skills/` for Claude Code. It validates and stages the whole batch before replacing installed versions, rolls back the entire batch on an exchange failure, and refuses to overwrite a newer installed Skill. Existing `unity-autorun` installations are preserved with a manual removal notice so custom changes are not deleted.
 
 For Claude Desktop, select the directory containing `claude_desktop_config.json` and install MCP only. The Desktop target does not load filesystem Skills from that directory.
+
+## Host Agent Rules and self-test selection
+
+The `Agent Rules` row shows the host `AGENTS.md` as `Not installed`, `Update available`, `Current`, or a read/marker error, with a refresh action. Use `Install Agent Rules` or `Update Agent Rules` to write the instructions; an unchanged block shows `Agent Rules Current`. Writing requires clicking install or update. The selected client directory never changes the host destination.
+
+Fixed markers `<!-- unity-autorun:agent-instructions:begin -->` and `<!-- unity-autorun:agent-instructions:end -->` surround a versioned block. A missing file or block is created/appended. An update replaces only the managed block and preserves all user rules outside it. Duplicate markers, a missing counterpart, incorrect ordering, or a newer block version return an error without overwriting the file.
+
+The instructions require agents to call `list_scripts` and `get_script(includeSource=true)` before game/UI operation self-tests and verify the starting state, complete flow, assertions, parameters, and dependencies. Run a valid matching script directly with `run-script`. When none matches, never silently create a script; ask whether the user wants a self-test script created. An explicit creation request or `gen-script` invocation already authorizes creation and needs no repeated confirmation. Unavailable MCP, Unity, or Bridge calls block discovery and do not prove that no script matches. Wrong starts and failed runs retain the game state and produce evidence; agents must not change the flow, weaken assertions, or reset the game on their own.
 
 ## Generate and self-test a script
 
@@ -38,6 +47,16 @@ Reuse requires the entire business segment to match: its starting conditions, ac
 
 Every business script declares `Preconditions` and overrides `CheckPreconditions`. A wrong starting state fails before actions; the script does not silently select another flow. Cold-start scripts declare `PreparePlayMode = true` in their attribute: the runner enters Play Mode before checking the actual starting scene/UI, without a GUI toggle or caller flag. Declare and call the `start-play-mode` basic script to reuse preparation verification. Other scripts may explicitly use caller `ensurePlayMode=true`, whose default remains false. A child's preparation declaration never starts its parent flow or switches Play Mode during execution.
 
+## Edit an existing script
+
+```text
+$edit-script Fix currency text reading in business.open-inventory while preserving its starting state, inventory-opening flow and nonempty-currency assertion; compile, self-test and inspect affected callers
+```
+
+`edit-script` inspects the requested existing business source, dependencies, and reverse callers, defines the maintenance scope, and checks `unity_status.data.scriptRunStateAvailable=true`, `data.hasActiveScriptRun=false`, and `data.isCompiling=false` before changing code or refreshing. Wait while runs or compilation are active or run status is temporarily unavailable; report persistent missing/unavailable status as a blocker. Unknown state must never be treated as idle. It preserves the original starting state, complete flow, and goal contract and edits only the requested script. Reused dependencies and basic scripts cannot be changed to fit the task. A different start, flow, or goal needs a separate ID and file generated with `gen-script`; ask first if creation is not already authorized.
+
+After editing, refresh Unity, check compilation and registration errors, self-test with a new `runId`, and regression-test affected callers from their own declared starts. Repairs allow up to three rounds by default and never weaken preconditions or assertions. Missing starting conditions, unavailable Unity/Bridge, and blocked caller regressions are reported as actual blockers and unverified results. The Skill does not implicitly cancel active runs, reset the game, or stop Play Mode.
+
 ## Run an existing script
 
 ```text
@@ -46,7 +65,7 @@ $run-script Run the inventory script just generated and verify its final UI stat
 
 `run-script` finds and inspects an existing script's starting conditions, dependencies, and parameters; runs it; waits for the terminal result; and verifies assertions. It does not generate or modify scripts. A missing matching flow, wrong starting state, or failed assertion produces a concrete result with run evidence.
 
-Both Skills allow normal automatic discovery and explicit `$gen-script` or `$run-script` invocation. Their self-contained installable packages are [`skill~/gen-script/`](./skill~/gen-script/) and [`skill~/run-script/`](./skill~/run-script/); neither relies on paths outside its installed folder.
+All three Skills allow normal automatic discovery and explicit `$gen-script`, `$edit-script`, or `$run-script` invocation. Their self-contained installable packages are [`skill~/gen-script/`](./skill~/gen-script/), [`skill~/edit-script/`](./skill~/edit-script/), and [`skill~/run-script/`](./skill~/run-script/); none relies on paths outside its installed folder.
 
 ## Editor script management
 
@@ -168,4 +187,5 @@ The .NET tests do not compile Unity Editor code or generated host scripts. Host 
 - Wrong start: prepare the exact declared starting state or generate a separate flow; do not edit shared scripts to hide the difference.
 - Click failure: inspect hierarchy, blockers, interactability, EventSystem, and selector precision.
 - Reload or Play Mode stopped during execution: inspect the retained terminal result. The runner does not restore arbitrary iterators or replay completed actions.
-- Stale Skill tools: update `gen-script` and `run-script`; review custom changes in an installed legacy `unity-autorun` before manually removing it.
+- Stale Skill tools: update `gen-script`, `edit-script`, and `run-script`; review custom changes in an installed legacy `unity-autorun` before manually removing it.
+- Agent Rules error: inspect paired, unique begin/end markers in the host root `AGENTS.md`, preserving user content outside them; a newer rules version needs a tool version that supports it.

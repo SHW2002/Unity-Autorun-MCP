@@ -1,0 +1,9 @@
+interface:
+  display_name: "Edit Unity Script"
+  short_description: "Repair and verify an existing Unity business script"
+  default_prompt: "Use $edit-script to repair the specified Unity Autorun business script while preserving its flow contract, then compile and self-test it."
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "unity-autorun"
+      description: "Unity Autorun existing script inspection, compilation and self-test tools"

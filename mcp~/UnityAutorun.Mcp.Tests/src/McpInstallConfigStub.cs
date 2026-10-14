@@ -5,6 +5,14 @@ public sealed class McpInstallConfig
     public const string ServerName = "unity-autorun";
 
     public static McpInstallConfig TestInstance;
+    public static string TestToolRootDirectory;
+
+    public static string GetToolRootDirectory()
+    {
+        if (string.IsNullOrEmpty(TestToolRootDirectory))
+            throw new InvalidOperationException("McpInstallConfig.TestToolRootDirectory must be set by the test fixture.");
+        return TestToolRootDirectory;
+    }
 
     public string PublishedDllPath = "";
     public string ProjectRoot = "";

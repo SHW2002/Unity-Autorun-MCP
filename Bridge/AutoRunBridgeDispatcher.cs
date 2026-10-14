@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
+using UnityAutorun.Scripting;
 using UnityEditor;
 using UnityEngine;
 
@@ -273,6 +274,7 @@ public sealed partial class AutoRunBridgeDispatcher
         response.data.unityVersion = Application.unityVersion;
         response.data.bridgeVersion = AutoRunBridgeServer.Version;
         response.data.isCompiling = AutoRunCompilationMonitor.IsCompiling;
+        response.data.scriptRunStateAvailable = AutoRunScriptService.TryGetActiveRunState(out response.data.hasActiveScriptRun);
         response.data.compilerMessages = AutoRunCompilationMonitor.Messages;
     }
 

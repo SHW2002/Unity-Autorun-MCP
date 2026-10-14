@@ -18,11 +18,20 @@ Unity Autorun Tool 是一个 Unity Editor 自动化工具。外部 AI 根据宿�
 3. 等待包导入和编译完成，打开 `Window > Auto Run Window`。
 4. 展开 `Connection > MCP Settings & Diagnostics`，在 `Tools` 点击 `Publish MCP`，生成当前 MCP Server。
 5. 在展开区的 `Install` 点击 `Select`，选择项目 `.codex` 或 Claude Code 项目 `.claude` 文件夹，依次点击 `Install MCP` 和 `Install Skills`。
-6. 重新连接 AI 客户端，确认 `Bridge` 为 `Running`，`Processes` 显示对应 MCP 进程。`Versions` 分别展示 MCP、`gen-script`、`run-script` 的版本和安装状态。
+6. 如需让 Agent 在游戏/UI 自测前优先检查已有脚本，在独立的 `Agent Rules` 行点击 `Install Agent Rules`，将提示规则写入当前宿主 Unity 项目根目录的 `AGENTS.md`。这一步与客户端目录和 `Install Skills` 分开。
+7. 重新连接 AI 客户端，确认 `Bridge` 为 `Running`，`Processes` 显示对应 MCP 进程。`Versions` 分别展示 MCP、`gen-script`、`edit-script`、`run-script` 的版本和安装状态。
 
-`Install Skills` 一次安装两个独立 Skill：Codex 安装到所选 `.codex` 同级的 `.agents/skills/`，Claude Code 安装到 `.claude/skills/`。安装器先验证并暂存整批文件，之后备份和替换；任一替换失败会回滚整批，已安装版本高于随包版本时拒绝覆盖。旧的 `unity-autorun` Skill 会保留并提示手动检查、卸载，避免删除用户定制内容。
+`Install Skills` 一次安装三个独立 Skill：Codex 安装到所选 `.codex` 同级的 `.agents/skills/`，Claude Code 安装到 `.claude/skills/`。安装器先验证并暂存整批文件，之后备份和替换；任一替换失败会回滚整批，已安装版本高于随包版本时拒绝覆盖。旧的 `unity-autorun` Skill 会保留并提示手动检查、卸载，避免删除用户定制内容。
 
 Claude Desktop 只安装 MCP：选择包含 `claude_desktop_config.json` 的目录，点击 `Install MCP`。该客户端不会通过此目录加载本地文件系统 Skills。
+
+## 宿主 Agent Rules 与自测选择
+
+`Agent Rules` 行显示宿主 `AGENTS.md` 的 `Not installed`、`Update available`、`Current` 或读取/标记错误状态，可刷新检查。分别使用 `Install Agent Rules`、`Update Agent Rules` 写入规则；已一致时显示 `Agent Rules Current`。只有明确点击安装或更新才会写入宿主文件，客户端安装目录不会改变写入位置。
+
+规则使用固定标记 `<!-- unity-autorun:agent-instructions:begin -->` 和 `<!-- unity-autorun:agent-instructions:end -->` 包围，并带有区块版本。文件或区块不存在时创建/追加；更新只替换这两个标记之间的管理区块，保留区块外的用户规则。重复标记、单侧缺失、顺序错误或更高版本会报告错误，不会覆盖文件。
+
+规则要求 Agent 在需要游戏/UI 操作自测时，先通过 `list_scripts` 与 `get_script(includeSource=true)` 核对已有脚本的起点、完整流程、断言、参数和依赖。找到匹配且有效的脚本就直接用 `run-script` 执行；找不到时不得静默新建，可以询问是否需要创建自测脚本。用户已明确要求创建或调用 `gen-script` 时不重复确认。MCP、Unity 或 Bridge 无法调用属于检查阻塞，不能据此声称没有匹配脚本。起点不匹配或运行失败时保留现场并报告证据，不能自行改流程、弱化断言或重置游戏。
 
 ## 生成并自测脚本
 
@@ -38,6 +47,16 @@ $gen-script 从启动游戏后的主界面打开背包，验证金币文本非�
 
 每个业务脚本必须声明 `Preconditions` 并实现 `CheckPreconditions`。起点不符会在执行动作前失败，不会自动选择另一条流程。冷启动脚本在 attribute 中声明 `PreparePlayMode = true`，运行器会先进入 Play Mode，再检查实际场景/UI 起点；GUI 和 MCP 均无需额外勾选启动选项。脚本声明并调用 `start-play-mode` 基础脚本来复用准备校验步骤。普通脚本仍可由调用方显式选择 `ensurePlayMode=true`，其默认值保持 false；子脚本的准备声明不会隐式启动父流程或切换执行中的 Play Mode。
 
+## 修改已有脚本
+
+```text
+$edit-script 修复 business.open-inventory 的金币文本读取，保持原有起点、背包打开流程和金币非空断言，编译自测并检查受影响的调用者
+```
+
+`edit-script` 读取指定的已有业务脚本、依赖和反向调用者，确认维护范围，检查 `unity_status.data.scriptRunStateAvailable=true`、`data.hasActiveScriptRun=false` 且 `data.isCompiling=false` 后才修改或刷新；已有运行、编译或暂不可用时等待，持续缺失/不可用时报告阻塞，不能将未知状态当成空闲。它保持原有起点、完整流程与目标契约，仅编辑指定脚本；不能修改复用依赖或基础脚本来凑流程。不同起点、流程或目标需要由 `gen-script` 创建独立 ID 和文件，未获创建授权时先询问。
+
+修改后刷新 Unity、检查编译和注册错误，使用新 `runId` 自测，并从各自声明的起点回归受影响的调用者。修正默认最多三轮，不放宽起点或断言。缺少正确起点、Unity/Bridge 不可用或调用者回归无法执行时，报告实际阻塞与未验证项；不会取消已有运行、自动重置或停止游戏。
+
 ## 运行已有脚本
 
 ```text
@@ -46,7 +65,7 @@ $run-script 运行刚才生成的背包脚本，验证最终 UI 状态
 
 `run-script` 查找并检查已有脚本的起点、依赖和参数，然后运行、等待最终结果并核对断言。它不会生成或修改任何脚本。找不到匹配流程、起点不符或断言失败时，返回具体原因和运行证据。
 
-两个 Skill 均支持正常自动发现，也可以显式使用 `$gen-script`、`$run-script`。仓库中的独立安装包位于 [`skill~/gen-script/`](./skill~/gen-script/) 和 [`skill~/run-script/`](./skill~/run-script/)，各自包含完整引用文档，不依赖安装源中的其他目录。
+三个 Skill 均支持正常自动发现，也可以显式使用 `$gen-script`、`$edit-script`、`$run-script`。仓库中的独立安装包位于 [`skill~/gen-script/`](./skill~/gen-script/)、[`skill~/edit-script/`](./skill~/edit-script/) 和 [`skill~/run-script/`](./skill~/run-script/)，各自包含完整引用文档，不依赖安装源中的其他目录。
 
 ## 编辑器脚本管理
 
@@ -170,4 +189,5 @@ MCP 的 .NET 测试不会编译 Unity Editor 代码或宿主生成脚本；实�
 - 起点不符：按脚本声明准备同一实际起点，或生成一个不同流程的独立脚本；不要修改共享脚本来掩盖差异。
 - 按钮无法点击：检查当前层级、遮挡、可交互状态、EventSystem 和精确选择器。
 - 运行中重载或停止游戏：查看保留的终止结果；执行器不会自动恢复任意迭代器或重放动作。
-- Skill 仍使用旧工具：更新 `gen-script`、`run-script` 并检查旧 `unity-autorun` 的客户端安装目录，保留定制后手动卸载旧 Skill。
+- Skill 仍使用旧工具：更新 `gen-script`、`edit-script`、`run-script` 并检查旧 `unity-autorun` 的客户端安装目录，保留定制后手动卸载旧 Skill。
+- Agent Rules 状态错误：检查宿主根目录 `AGENTS.md` 中的 begin/end 标记是否成对且唯一，不要删除区块外的用户规则；高版本规则需使用支持该版本的工具更新。

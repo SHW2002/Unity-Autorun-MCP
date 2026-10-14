@@ -69,6 +69,7 @@ public partial class AutoRunWindow
         {
             _mcpVersionRefreshRequested = true;
             InvalidateSkillInstallStatus();
+            InvalidateAgentInstructionsStatus();
         }
         GUILayout.EndVertical();
     }

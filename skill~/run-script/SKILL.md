@@ -1,6 +1,6 @@
 ---
 name: run-script
-description: Run and verify an existing Unity Autorun C# automation script by ID, name, or matching business flow. Use when the user wants to execute an already available script. Inspect its declared starting state, dependencies and parameters; this skill does not generate, edit, or repair scripts.
+description: Run and verify an existing Unity Autorun C# automation script by ID, name, or matching business flow. Use for requested operations or self-tests that have a matching existing script. Inspect its declared starting state, dependencies and parameters; this skill does not generate, edit, or repair scripts.
 ---
 
 # Run Unity Autorun Scripts
@@ -9,7 +9,7 @@ Execute an existing compiled script and report its concrete result. Read `get_sc
 
 Business scripts are normally located under `Assets/Editor/AutorunScripts/`. Existing scripts under the older `Assets/AutorunScripts/Editor/` directory remain discoverable and readable. Inspect the registered source path; this execution workflow does not move or rewrite files.
 
-Find the requested script with a targeted `list_scripts` query, then read `get_script` with source when needed to establish its complete flow. Match the declared starting state and actions, not just the final target. If several flows match or required parameters cannot be inferred, ask the smallest necessary clarification. If no existing script fits, report that finding; generating a new script is a separate `gen-script` task.
+For operation or self-testing, find the requested script with a targeted `list_scripts` query, then read `get_script(includeSource=true)` to establish its complete flow. Match the declared starting state, actions, parameters and final assertions, not just the final target. Run a usable existing match. If several flows match or required parameters cannot be inferred, ask the smallest necessary clarification. If no existing script fits, report that finding and ask whether the user wants a new self-test script; do not silently create one. Generation belongs to `gen-script` after authorization, and repair of a user-specified existing business script belongs to `edit-script` after authorization. An already explicit request to create or repair supplies that authorization.
 
 Check registration/dependency errors, required parameters, and the root script's `preparePlayMode` metadata before running. Verify the starting state with available project evidence or a narrow UI query. For a startup script with `preparePlayMode=true`, currently stopped Play Mode is expected: its business preconditions are evaluated after the runner prepares Play Mode. Do not reject the flow merely because its post-start UI is absent before preparation. If evidence disproves the actual declared start, report the mismatch without claiming an execution or inventing a run ID. If execution is started, the runner checks `CheckPreconditions` and produces the actual `precondition_failed` result when the start is wrong. Do not reset the game, choose a different path, or edit preconditions to make the run pass.
 
