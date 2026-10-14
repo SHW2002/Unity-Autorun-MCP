@@ -98,6 +98,7 @@ public sealed partial class AutoRunBridgeDispatcher
         {
             id = definition.Id, name = definition.Name, kind = definition.Kind.ToString().ToLowerInvariant(),
             description = definition.Description, preconditions = definition.Preconditions,
+            preparePlayMode = definition.PreparePlayMode,
             dependencies = definition.Dependencies, sourcePath = definition.SourcePath,
             validationError = definition.ValidationError,
         };

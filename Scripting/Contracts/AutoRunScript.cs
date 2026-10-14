@@ -20,6 +20,8 @@ namespace UnityAutorun.Scripting
         public AutoRunScriptKind Kind { get; private set; }
         public string Description { get; set; }
         public string Preconditions { get; set; }
+        /// <summary>Prepare Play Mode before the root script's first instruction. Dependency metadata never changes a running flow.</summary>
+        public bool PreparePlayMode { get; set; }
         public string[] Dependencies { get; set; }
     }
 

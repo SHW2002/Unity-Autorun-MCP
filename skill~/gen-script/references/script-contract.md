@@ -8,13 +8,13 @@ Inspect ancestor `.asmdef` files before creating source under `Assets/AutorunScr
 
 ## Authoring contract
 
-Use `UnityAutorun.Scripting`. A public parameterless script class derives from `AutoRunScript` and has `[AutoRunScript(id, name, AutoRunScriptKind.Business, ...)]`. Its metadata includes `Description`, required `Preconditions`, and `Dependencies = new[] { ... }`. Every business script overrides `CheckPreconditions(AutoRunScriptContext)`; return null when its exact start is valid, otherwise return a concrete failure explanation.
+Use `UnityAutorun.Scripting`. A public parameterless script class derives from `AutoRunScript` and has `[AutoRunScript(id, name, AutoRunScriptKind.Business, ...)]`. Its metadata includes `Description`, required `Preconditions`, `PreparePlayMode` (default false), and `Dependencies = new[] { ... }`. MCP metadata exposes the preparation flag as `preparePlayMode`. Every business script overrides `CheckPreconditions(AutoRunScriptContext)`; return null when its exact post-preparation start is valid, otherwise return a concrete failure explanation.
 
 `Execute(AutoRunScriptContext)` returns `IEnumerator`. Supported yield values are null, nested `IEnumerator`, `context.Wait(seconds)`, `context.WaitUntil(condition, timeoutSeconds, message)`, and `context.Call(scriptId, Dictionary<string,string>)`. Do not yield `WaitForSeconds`, `WaitForEndOfFrame`, `Task`, or Unity coroutine handles: execution uses the Editor runner, not a MonoBehaviour coroutine.
 
 Declare every called script in `Dependencies`, including calls from branches. Missing dependencies, duplicate IDs, cycles, or undeclared calls are errors. Child parameters are explicitly supplied and are not inherited. A failed dependency fails its caller. `OnExit(context, AutoRunScriptResult)` runs when a script exits, including precondition failure; cleanup must tolerate partial initialization and preserve game state.
 
-Use `start_script(ensurePlayMode=true)` for authorized initial Play Mode preparation before the business iterator starts. Never switch Play Mode or trigger asset recompilation from a running `IEnumerator`: arbitrary C# iterators cannot be reconstructed after a Domain Reload. An explicit requested terminal `stop-play-mode` action is supported by the runner; do not resume business actions after stopping. Mid-run reload or unexpected Play Mode changes terminate execution and preserve the failure rather than replaying actions.
+For a requested startup flow, put `PreparePlayMode=true` on the root business script, declare `start-play-mode` in its dependencies, and yield `context.Call("start-play-mode")`. The runner enters Play Mode before checking preconditions or creating the business iterator when the selected root metadata is true or caller `ensurePlayMode=true`. A false caller option does not override true root metadata; adding a dependency with preparation metadata does not enable preparation. A child `start-play-mode` call only verifies Play Mode is already prepared, and fails if it is not. Never switch Play Mode or trigger asset recompilation from a running `IEnumerator`: arbitrary C# iterators cannot be reconstructed after a Domain Reload. Initial preparation can recover across reload because no script actions have executed. An explicit requested terminal `stop-play-mode` action is supported by the runner; do not resume business actions after stopping. Mid-run reload or unexpected Play Mode changes terminate execution and preserve the failure rather than replaying actions.
 
 Context members include `RunId`, `ScriptId`, `Host`, `GetString`, `GetInt`, `GetNumber`, `GetBool`, `Log`, `AddArtifact`, `Fail(code,message)`, and `Require(operationResult)`. `Require` checks operation success; an assertion of UI state additionally requires `result.Matched`.
 
@@ -26,6 +26,7 @@ All parameter values are strings, including numbers and booleans.
 
 | Script ID | Parameters |
 | --- | --- |
+| `start-play-mode` | None; root execution prepares Play Mode, child execution only verifies the prepared state |
 | `click-button` | At least `name` or `text`; optional `objectPath`/`scope`, `framework` (`ugui` or `fairygui`), `matchPolicy` (default `unique`) |
 | `wait` | `seconds` (default `1`) |
 | `wait-for-ui-state` | `query`, `scope`, `exact`, comma-separated `types`, `property`, `comparison`, `expected`, `includeInactive`, `includeSensitive`, `timeoutSeconds` |
@@ -47,6 +48,7 @@ using UnityAutorun.Scripting;
 [AutoRunScript("business.open-target-from-home", "Open target from home", AutoRunScriptKind.Business,
     Description = "From the declared home UI, click one observed control and assert target state.",
     Preconditions = "Play Mode; startQuery identifies the observed home landmark.",
+    PreparePlayMode = false,
     Dependencies = new[] { "click-button", "wait-for-ui-state" })]
 public sealed class OpenTargetFromHome : AutoRunScript
 {
@@ -83,8 +85,47 @@ public sealed class OpenTargetFromHome : AutoRunScript
 }
 ```
 
+## Startup flow template
+
+Use a separate flow ID when the request includes starting the game. Confirm the startup scene path and target landmark from project evidence, then add the exact project startup actions needed between preparation and the final assertion. This template does not change scenes or infer a different route if the starting scene is wrong.
+
+```csharp
+using System.Collections;
+using System.Collections.Generic;
+using UnityAutorun.Scripting;
+using UnityEngine.SceneManagement;
+
+[AutoRunScript("business.cold-start-to-observed-ui", "Start game and assert observed UI", AutoRunScriptKind.Business,
+    Description = "Prepare Play Mode from the observed startup scene, then wait for the declared target landmark.",
+    Preconditions = "After preparation, the active scene equals startScenePath; targetQuery identifies the observed target UI.",
+    PreparePlayMode = true,
+    Dependencies = new[] { "start-play-mode", "wait-for-ui-state" })]
+public sealed class ColdStartToObservedUi : AutoRunScript
+{
+    public override string CheckPreconditions(AutoRunScriptContext context)
+    {
+        if (!context.Host.IsPlaying) return "Initial Play Mode preparation did not finish.";
+        string startScenePath = context.GetString("startScenePath");
+        if (string.IsNullOrWhiteSpace(startScenePath) || string.IsNullOrWhiteSpace(context.GetString("targetQuery")))
+            return "Provide observed startScenePath and targetQuery.";
+        return SceneManager.GetActiveScene().path == startScenePath ? null : "Required post-preparation startup scene is not active.";
+    }
+    public override IEnumerator Execute(AutoRunScriptContext context)
+    {
+        yield return context.Call("start-play-mode");
+        // Add only the verified project's exact startup/business actions here.
+        yield return context.Call("wait-for-ui-state", new Dictionary<string, string>
+        {
+            { "query", context.GetString("targetQuery") }, { "exact", "true" },
+            { "comparison", "exists" }, { "timeoutSeconds", "30" }
+        });
+        context.Log("The declared target UI was observed.");
+    }
+}
+```
+
 ## MCP workflow
 
 Use `create_script` with `path` relative to `Assets/AutorunScripts/Editor/` and `source` containing C#. Use the normal file editor only to repair files created by the current generation task. `refresh_scripts` requests Unity asset refresh; poll `unity_status` for compilation completion and inspect `compilerMessages`. Verify registered metadata and `validationError` through `list_scripts`/`get_script`.
 
-`start_script` takes `scriptId`, string-valued `parameters` or `parametersJson` (choose one), optional `runId`, `ensurePlayMode` (default false), and `timeoutSeconds`. Reuse a run ID only for transport retries of the same execution. Every intentional new self-test, including a rerun after compilation or repair, uses a new ID; an old ID returns its retained result instead of executing new code. `get_script_status` with that ID returns `data.scriptRun`, including state, terminal flag, code, message, call stack, logs and artifacts. A failed terminal result still contains the full run evidence. Poll only while nonterminal; call `cancel_script` when the user cancels.
+`start_script` takes `scriptId`, string-valued `parameters` or `parametersJson` (choose one), optional `runId`, `ensurePlayMode` (default false), and `timeoutSeconds`. `preparePlayMode` is compiled script metadata, not a `start_script` argument. Effective preparation is caller `ensurePlayMode=true` OR root `preparePlayMode=true`, never dependency inference. Reuse a run ID only for transport retries of the same execution. Every intentional new self-test, including a rerun after compilation or repair, uses a new ID; an old ID returns its retained result instead of executing new code. `get_script_status` with that ID returns `data.scriptRun`, including state, terminal flag, code, message, call stack, logs and artifacts. A failed terminal result still contains the full run evidence. Poll only while nonterminal; call `cancel_script` when the user cancels.

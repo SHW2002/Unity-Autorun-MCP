@@ -90,6 +90,7 @@ public sealed class AutoRunBridgeScriptInfo
     public string kind;
     public string description;
     public string preconditions;
+    public bool preparePlayMode;
     public string[] dependencies;
     public string sourcePath;
     public string source;

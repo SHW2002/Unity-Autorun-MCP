@@ -23,6 +23,7 @@ namespace UnityAutorun.Mcp.Tests
             yield return ("cleanup exception becomes failure without repeating OnExit", CleanupFailure);
             yield return ("unsupported Unity yield instruction fails explicitly", UnsupportedYield);
             yield return ("subscript receives only explicitly passed parameters", Parameters);
+            yield return ("child preparation metadata never starts Play Mode during a flow", ChildPreparation);
         }
 
         private static void Success()
@@ -191,6 +192,29 @@ namespace UnityAutorun.Mcp.Tests
         }
         private static IEnumerator WithParameters(AutoRunScriptContext context)
         { yield return context.Call("child", new Dictionary<string, string> { ["childOnly"] = "yes" }); }
+
+        private static void ChildPreparation()
+        {
+            var host = new FakeHost { Playing = false };
+            bool parentAction = false, childAction = false, tail = false;
+            var parent = Definition("parent", new Probe(c => PreparationParent(c, () => parentAction = true, () => tail = true)), "child");
+            var child = Definition("child", new Probe(c => Count(() => childAction = true),
+                c => c.Host.IsPlaying ? null : "Initial Play Mode preparation was not declared by the root."));
+            child.PreparePlayMode = true;
+            var runner = Runner(host, parent, child);
+            string id = runner.Start("parent");
+            runner.Tick(0);
+            Assert(parentAction && !childAction && !tail, "parent actions are not replayed and unprepared child actions never run");
+            Assert(runner.GetStatus(id).Code == "precondition_failed" && !host.IsPlaying && host.Stops == 0,
+                "child metadata does not alter Play Mode or silently continue a different route");
+        }
+
+        private static IEnumerator PreparationParent(AutoRunScriptContext context, Action before, Action after)
+        {
+            before();
+            yield return context.Call("child");
+            after();
+        }
         private static IEnumerator Count(Action action) { action(); yield break; }
 
         private static AutoRunScriptRunner Runner(FakeHost host, params AutoRunScriptDefinition[] definitions)
@@ -214,7 +238,8 @@ namespace UnityAutorun.Mcp.Tests
         }
         private sealed class FakeHost : IAutoRunScriptHost
         {
-            public bool IsPlaying { get { return true; } }
+            public bool Playing = true;
+            public bool IsPlaying { get { return Playing; } }
             public int Stops;
             public AutoRunScriptOperationResult ClickButton(AutoRunScriptButtonSelector selector) { return AutoRunScriptOperationResult.Success("clicked"); }
             public AutoRunScriptOperationResult EvaluateUiState(AutoRunScriptUiStateQuery query) { return AutoRunScriptOperationResult.Success("matched"); }

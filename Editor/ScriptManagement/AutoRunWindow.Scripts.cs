@@ -15,6 +15,8 @@ public partial class AutoRunWindow
     [SerializeField] private bool _scriptEnsurePlayMode;
     [SerializeField] private double _scriptTimeoutSeconds = 120;
     [SerializeField] private string _selectedScriptRunId = "";
+    [SerializeField] private string _observedScriptRunId = "";
+    private string _reportedScriptRunId = "";
     private List<AutoRunScriptDefinition> _scriptDefinitions = new List<AutoRunScriptDefinition>();
     private List<string> _scriptCatalogErrors = new List<string>();
     private List<AutoRunScriptRunStatus> _scriptRuns = new List<AutoRunScriptRunStatus>();
@@ -96,6 +98,17 @@ public partial class AutoRunWindow
     {
         _scriptRuns = AutoRunScriptService.ListRuns();
         _runsRevision = AutoRunScriptService.RunsRevision;
+        ReportCompletedScriptRun();
+    }
+    private void ReportCompletedScriptRun()
+    {
+        if (string.IsNullOrEmpty(_observedScriptRunId) || _reportedScriptRunId == _observedScriptRunId) return;
+        AutoRunScriptRunStatus status = AutoRunScriptService.GetStatus(_observedScriptRunId);
+        if (status == null || !status.IsTerminal) return;
+        _reportedScriptRunId = status.RunId;
+        AutoRunLogLevel level = status.State == AutoRunScriptRunState.Failed || status.State == AutoRunScriptRunState.TimedOut
+            ? AutoRunLogLevel.Error : status.State == AutoRunScriptRunState.Canceled ? AutoRunLogLevel.Warning : AutoRunLogLevel.Info;
+        AppendConsoleText("[Scripts] " + status.ScriptId + ": " + status.State + " [" + status.Code + "] " + status.Message, level);
     }
 
     private void RenderScriptPanel()
@@ -162,17 +175,27 @@ public partial class AutoRunWindow
     private void RenderScriptDetails(AutoRunScriptDefinition definition)
     {
         if (!string.IsNullOrEmpty(definition.ValidationError)) EditorGUILayout.HelpBox(definition.ValidationError, MessageType.Error);
+        ResponsiveRow runActions = BeginResponsiveRow();
+        runActions.Add(135);
         using (new EditorGUI.DisabledScope(AutoRunScriptService.HasActiveRun || EditorApplication.isCompiling
             || EditorApplication.isUpdating || !string.IsNullOrEmpty(definition.ValidationError)))
         {
-            if (GUILayout.Button("Run Script", GUILayout.Width(100))) StartSelectedScript(definition);
+            string action = (definition.PreparePlayMode || _scriptEnsurePlayMode) && !EditorApplication.isPlaying
+                ? "Start Game & Run" : "Run Script";
+            if (GUILayout.Button(action, GUILayout.Width(135))) StartSelectedScript(definition);
         }
+        runActions.Add(175);
+        if (definition.PreparePlayMode)
+            GUILayout.Label(new GUIContent("Starts game automatically", "This script declares Play Mode preparation before its starting conditions are checked."),
+                EditorStyles.miniLabel, GUILayout.Width(175));
+        else _scriptEnsurePlayMode = GUILayout.Toggle(_scriptEnsurePlayMode,
+            new GUIContent("Start game first", "Enter Play Mode before checking the script's starting conditions."), GUILayout.Width(175));
+        runActions.End();
         _showScriptRunOptions = EditorGUILayout.Foldout(_showScriptRunOptions, "Run Options", true);
         if (_showScriptRunOptions)
         {
             GUILayout.Label("Parameters JSON (string values)", EditorStyles.miniBoldLabel);
             _scriptParametersJson = EditorGUILayout.TextArea(_scriptParametersJson, GUILayout.MinHeight(48), GUILayout.ExpandWidth(true));
-            _scriptEnsurePlayMode = EditorGUILayout.Toggle("Ensure Play Mode", _scriptEnsurePlayMode);
             _scriptTimeoutSeconds = EditorGUILayout.DoubleField("Timeout (seconds)", _scriptTimeoutSeconds);
         }
         int dependencyCount = definition.Dependencies == null ? 0 : definition.Dependencies.Length;
@@ -232,6 +255,7 @@ public partial class AutoRunWindow
     {
         try
         {
+            ReportCompletedScriptRun();
             _scriptWindowError = null;
             if (double.IsNaN(_scriptTimeoutSeconds) || double.IsInfinity(_scriptTimeoutSeconds) || _scriptTimeoutSeconds <= 0)
                 throw new InvalidOperationException("Timeout must be a positive finite number.");
@@ -245,8 +269,9 @@ public partial class AutoRunWindow
             }
             AutoRunScriptRunStatus status = AutoRunScriptService.Start(definition.Id, parameters, _scriptEnsurePlayMode, _scriptTimeoutSeconds);
             _selectedScriptRunId = status.RunId;
-            AppendConsoleText("[Scripts] " + status.ScriptId + ": " + status.State + " " + status.Message,
-                status.State == AutoRunScriptRunState.Failed ? AutoRunLogLevel.Error : AutoRunLogLevel.Info);
+            _observedScriptRunId = status.RunId;
+            if (status.IsTerminal) ReportCompletedScriptRun();
+            else AppendConsoleText("[Scripts] " + status.ScriptId + ": " + status.State + " " + status.Message, AutoRunLogLevel.Info);
             RefreshScriptRuns();
         }
         catch (Exception exception)
@@ -292,10 +317,13 @@ public partial class AutoRunWindow
         AutoRunScriptDefinition definition = _scriptDefinitions.Find(item => item.Id == selected.ScriptId);
         GUILayout.Label((definition == null ? selected.ScriptId : definition.Name) + " | " + selected.State
             + " | " + selected.ElapsedSeconds.ToString("0.0") + "s", GetWrappedStyle(EditorStyles.miniBoldLabel));
-        string message = selected.Message ?? "";
+        string message = !selected.IsTerminal && selected.Logs.Count > 0
+            ? selected.Logs[selected.Logs.Count - 1] : selected.Message ?? "";
         string summary = message.Replace('\r', ' ').Replace('\n', ' ');
         if (summary.Length > 100) summary = summary.Substring(0, 100) + "…";
-        GUILayout.Label(new GUIContent(summary, message), EditorStyles.miniLabel);
+        if (selected.State == AutoRunScriptRunState.Failed || selected.State == AutoRunScriptRunState.TimedOut)
+            EditorGUILayout.HelpBox(summary, MessageType.Error);
+        else GUILayout.Label(new GUIContent(summary, message), EditorStyles.miniLabel);
         if (!selected.IsTerminal && GUILayout.Button("Cancel Run"))
         {
             _selectedScriptRunId = selected.RunId;

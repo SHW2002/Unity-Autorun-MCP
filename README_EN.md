@@ -34,7 +34,7 @@ $gen-script From the home UI after starting the game, open inventory, assert tha
 
 Reuse requires the entire business segment to match: its starting conditions, actions, and outputs must be identical. A common destination is insufficient. Reused scripts are never edited to fit the new task. Different starting states or flows to the same target receive different script IDs and source files.
 
-Every business script declares `Preconditions` and overrides `CheckPreconditions`. A wrong starting state fails before actions; the script does not silently select another flow. When the user requests starting the game, `ensurePlayMode=true` prepares Play Mode before checking the declared post-start scene/UI. Its default is false.
+Every business script declares `Preconditions` and overrides `CheckPreconditions`. A wrong starting state fails before actions; the script does not silently select another flow. Cold-start scripts declare `PreparePlayMode = true` in their attribute: the runner enters Play Mode before checking the actual starting scene/UI, without a GUI toggle or caller flag. Declare and call the `start-play-mode` basic script to reuse preparation verification. Other scripts may explicitly use caller `ensurePlayMode=true`, whose default remains false. A child's preparation declaration never starts its parent flow or switches Play Mode during execution.
 
 ## Run an existing script
 
@@ -50,7 +50,7 @@ Both Skills allow normal automatic discovery and explicit `$gen-script` or `$run
 
 The `Autorun Scripts` panel includes:
 
-The default view shows script names, the run action, and a short result. Expand `Script Details` for descriptions, starting conditions, sources, and dependencies; `Run Options` for parameters, Play Mode, and timeout; and `Result Details` / `Recent Runs` for calls, logs, artifacts, and history. Errors and cancellation remain visible. MCP settings and Console start collapsed.
+The default view shows script names, the run action, and a short result. Scripts declaring `PreparePlayMode=true` show an automatic startup hint and `Start Game & Run` in Edit Mode. Other scripts expose `Start game first` beside the run action. Active runs show their latest step log; completed runs append their final result to Console, and failures are shown directly. Expand `Script Details` for descriptions, starting conditions, sources, and dependencies; `Run Options` for parameters and timeout; and `Result Details` / `Recent Runs` for calls, logs, artifacts, and history. Errors and cancellation remain visible. MCP settings and Console start collapsed.
 
 The catalog and filtered choices are cached and updated after compilation or an explicit refresh. Focusing the window does not rescan the project, and idle run history does not trigger continuous repaints. Process and binary version queries run in the background; periodic process queries stop while MCP settings are collapsed.
 
@@ -103,6 +103,7 @@ Declare every `context.Call` target in the attribute's `Dependencies`. Missing d
 
 | Built-in ID | Purpose | Common parameters (string values) |
 | --- | --- | --- |
+| `start-play-mode` | Prepare initial Play Mode entry before a root run, then verify startup; a business root declares `PreparePlayMode=true` | None |
 | `click-button` | uGUI/FairyGUI button click | `name`, `text`, `objectPath`, `scope`, `framework`, `matchPolicy` |
 | `wait` | Real Editor time delay | `seconds` |
 | `wait-for-ui-state` | Wait for an observable assertion | `query`, `scope`, `property`, `comparison`, `expected`, `timeoutSeconds` |

@@ -34,7 +34,7 @@ $gen-script 从启动游戏后的主界面打开背包，验证金币文本非�
 
 复用只允许完整一致的业务片段：起点、动作和结果都必须匹配。不能因为终点相同而复用不同流程，也不能为当前需求修改复用脚本。同一个目标的不同起点或不同流程使用独立脚本 ID 和文件。
 
-每个业务脚本必须声明 `Preconditions` 并实现 `CheckPreconditions`。起点不符会在执行动作前失败，不会自动选择另一条流程。用户要求启动游戏时，执行选项 `ensurePlayMode=true` 由运行器先进入 Play Mode，再检查业务脚本声明的实际场景/UI 起点；默认值为 false。
+每个业务脚本必须声明 `Preconditions` 并实现 `CheckPreconditions`。起点不符会在执行动作前失败，不会自动选择另一条流程。冷启动脚本在 attribute 中声明 `PreparePlayMode = true`，运行器会先进入 Play Mode，再检查实际场景/UI 起点；GUI 和 MCP 均无需额外勾选启动选项。脚本声明并调用 `start-play-mode` 基础脚本来复用准备校验步骤。普通脚本仍可由调用方显式选择 `ensurePlayMode=true`，其默认值保持 false；子脚本的准备声明不会隐式启动父流程或切换执行中的 Play Mode。
 
 ## 运行已有脚本
 
@@ -50,7 +50,7 @@ $run-script 运行刚才生成的背包脚本，验证最终 UI 状态
 
 `Autorun Scripts` 面板提供：
 
-默认只展示脚本名称、运行入口与简短结果。展开 `Script Details` 查看完整描述、起点、源码和依赖树；展开 `Run Options` 配置参数、Play Mode 与超时；展开 `Result Details` / `Recent Runs` 查看调用、日志、产物与历史。错误与取消入口直接可见，MCP 设置及 Console 默认收起。
+默认只展示脚本名称、运行入口与简短结果。声明 `PreparePlayMode=true` 的脚本旁显示自动启动提示，停止状态按钮显示 `Start Game & Run`。其他脚本可用按钮旁的 `Start game first` 明确选择进入 Play Mode。运行中显示最近一条步骤日志，完成后向 Console 追加最终结果，失败原因直接显示。展开 `Script Details` 查看完整描述、起点、源码和依赖树；展开 `Run Options` 配置参数与超时；展开 `Result Details` / `Recent Runs` 查看调用、日志、产物与历史。错误与取消入口直接可见，MCP 设置及 Console 默认收起。
 
 脚本目录和筛选结果使用缓存，重新编译或显式刷新后更新；切回窗口不会重新扫描全项目。空闲时有历史结果也不会持续重绘。进程和二进制版本查询在后台进行，关闭 MCP 设置区后停止定期进程查询。
 
@@ -105,6 +105,7 @@ public sealed class CheckCurrentUi : AutoRunScript
 
 | ID | 用途 | 常用参数（值均为字符串） |
 | --- | --- | --- |
+| `start-play-mode` | 在根运行的初始准备阶段启动 Play Mode，执行时验证已启动；业务根脚本需声明 `PreparePlayMode=true` | 无 |
 | `click-button` | 点击 uGUI/FairyGUI 按钮 | `name`、`text`、`objectPath`、`scope`、`framework`、`matchPolicy` |
 | `wait` | 按真实编辑器时间等待 | `seconds` |
 | `wait-for-ui-state` | 等待状态断言满足 | `query`、`scope`、`property`、`comparison`、`expected`、`timeoutSeconds` |

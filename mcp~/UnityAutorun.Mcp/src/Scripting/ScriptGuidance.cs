@@ -24,6 +24,7 @@ namespace UnityAutorun.Mcp
                         "Read actual host-project sources and current UI evidence. Use real project APIs when necessary; do not invent APIs, view names or button selectors.",
                         "Before creating a source file, inspect ancestor .asmdef files for Assets/AutorunScripts/Editor. Scripts must compile in an Editor assembly that can reference UnityAutorunTool.Editor and the actual host API assemblies. An ancestor host .asmdef can absorb Editor subfolders; create a suitable Editor-only .asmdef with verified named assembly references when needed. If host code is in predefined Assembly-CSharp, keep scripts in predefined Assembly-CSharp-Editor rather than creating an .asmdef that references Assembly-CSharp (Unity forbids that reference). Do not invent assembly names; inspect actual project assembly layout.",
                         "Declare starting state, exact intended flow and observable postconditions. Every business script must describe its Preconditions and override CheckPreconditions. Wrong starting state fails before actions; never silently choose another route.",
+                        "When the requested flow includes starting the game, declare PreparePlayMode=true on the root business script and declare/call the start-play-mode dependency. The runner prepares Play Mode before creating the business iterator and checking its post-preparation starting scene/state. Keep PreparePlayMode=false for a flow that requires a game already running. Merely depending on a script with PreparePlayMode=true never enables preparation.",
                         "Reuse an existing script only when its entire flow and starting state exactly match the needed segment. Never edit reused scripts. Same target from a different start/flow requires a different script ID.",
                         "Use create_script with a path relative to the script directory. The creation tool never replaces a file. Repairs may edit only the new script from this generation task via the agent's file editor.",
                         "Call refresh_scripts, poll unity_status until isCompiling=false and inspect compilerMessages. Then list/get the registered script and resolve validationError before starting.",
@@ -33,7 +34,7 @@ namespace UnityAutorun.Mcp
                     }),
                     ("contract", JsonUtil.Obj(
                         ("namespace", "UnityAutorun.Scripting"),
-                        ("metadata", "[AutoRunScript(id, name, AutoRunScriptKind.Business|Basic, Description=..., Preconditions=..., Dependencies=new[]{...})]"),
+                        ("metadata", "[AutoRunScript(id, name, AutoRunScriptKind.Business|Basic, Description=..., Preconditions=..., PreparePlayMode=true|false, Dependencies=new[]{...})]. list_scripts/get_script expose the bool as preparePlayMode."),
                         ("baseClass", "AutoRunScript"),
                         ("execute", "public override IEnumerator Execute(AutoRunScriptContext context)"),
                         ("preconditions", "public override string CheckPreconditions(AutoRunScriptContext context): null means valid; a nonempty message means fail without executing."),
@@ -46,9 +47,11 @@ namespace UnityAutorun.Mcp
                         ("uiStateQuery", "Query/Scope/Exact/Types/Property/Comparison/Expected/IncludeInactive/IncludeSensitive. Verify actual hierarchy paths/properties with get_ui_state first."),
                         ("logging", "context.Log(message), context.AddArtifact(path), context.Fail(code,message), context.Require(operationResult)."),
                         ("result", "data.scriptRun contains runId/scriptId/state/code/message/terminal/callStack/logs/artifacts. state is pending, running, succeeded, failed, canceled or timedout. Terminal failure returns ok=false with the same full scriptRun."),
-                        ("gameState", "Success, failure, cancellation and timeout unwind scripts/resources while preserving the current game state. Stop Play Mode only through an explicit requested action. ensurePlayMode is an explicit start option and defaults to false."))),
+                        ("playPreparation", "Root PreparePlayMode defaults to false. Before any script actions/preconditions, the service enters Play Mode only when caller ensurePlayMode=true OR the selected root script's preparePlayMode=true. Do not infer preparation from dependency metadata. Root start-play-mode has preparePlayMode=true; when called as a child it only confirms Play Mode is already prepared and never toggles Play Mode from a running iterator. An initial entry may survive domain reload because no script actions ran; running iterators never resume or replay after reload."),
+                        ("gameState", "Success, failure, cancellation and timeout unwind scripts/resources while preserving the current game state. Stop Play Mode only through an explicit requested action. Caller ensurePlayMode defaults to false; false does not override a root script's declared preparePlayMode=true."))),
                     ("builtins", new JsonArray
                     {
+                        Builtin("start-play-mode", "No parameters. Root preparePlayMode=true prepares initial entry before execution; a child call verifies Play Mode without switching it."),
                         Builtin("click-button", "name/text/objectPath/scope/framework/matchPolicy"),
                         Builtin("wait", "seconds"),
                         Builtin("wait-for-ui-state", "query/scope/exact/types(comma separated)/property/comparison/expected/includeInactive/includeSensitive/timeoutSeconds"),
@@ -56,7 +59,7 @@ namespace UnityAutorun.Mcp
                         Builtin("stop-play-mode", "Explicit stop action; no parameters."),
                         Builtin("log", "message")
                     }),
-                    ("template", Template))));
+                    ("template", Template), ("coldStartTemplate", ColdStartTemplate))));
         }
 
         private static JsonObject Builtin(string id, string parameters)
@@ -73,6 +76,7 @@ using UnityAutorun.Scripting;
 [AutoRunScript(""business.example-flow"", ""Example business flow"", AutoRunScriptKind.Business,
     Description = ""One exact flow: starting UI -> click specified button -> assert target UI."",
     Preconditions = ""Play Mode, startQuery matches the required starting UI, and buttonName/objectPath identify the observed button."",
+    PreparePlayMode = false,
     Dependencies = new[] { ""click-button"", ""wait-for-ui-state"" })]
 public sealed class ExampleBusinessFlow : AutoRunScript
 {
@@ -109,6 +113,41 @@ public sealed class ExampleBusinessFlow : AutoRunScript
     public override void OnExit(AutoRunScriptContext context, AutoRunScriptResult result)
     {
         // Release only resources/event handlers created by this script. Preserve game state.
+    }
+}
+";
+
+        public const string ColdStartTemplate = @"using System.Collections;
+using System.Collections.Generic;
+using UnityAutorun.Scripting;
+using UnityEngine.SceneManagement;
+
+[AutoRunScript(""business.cold-start-to-observed-ui"", ""Start game and assert observed UI"", AutoRunScriptKind.Business,
+    Description = ""Prepare Play Mode from the observed startup scene, then wait for the declared target landmark."",
+    Preconditions = ""After Play Mode preparation, the active scene path equals startScenePath; targetQuery identifies the observed target UI."",
+    PreparePlayMode = true,
+    Dependencies = new[] { ""start-play-mode"", ""wait-for-ui-state"" })]
+public sealed class ColdStartToObservedUi : AutoRunScript
+{
+    public override string CheckPreconditions(AutoRunScriptContext context)
+    {
+        if (!context.Host.IsPlaying) return ""Initial Play Mode preparation did not finish."";
+        string startScenePath = context.GetString(""startScenePath"");
+        if (string.IsNullOrWhiteSpace(startScenePath) || string.IsNullOrWhiteSpace(context.GetString(""targetQuery"")))
+            return ""Provide observed startScenePath and targetQuery."";
+        return SceneManager.GetActiveScene().path == startScenePath ? null : ""The required post-preparation startup scene is not active."";
+    }
+
+    public override IEnumerator Execute(AutoRunScriptContext context)
+    {
+        yield return context.Call(""start-play-mode"");
+        // Add only the verified project's exact startup/business actions here.
+        yield return context.Call(""wait-for-ui-state"", new Dictionary<string, string>
+        {
+            { ""query"", context.GetString(""targetQuery"") }, { ""exact"", ""true"" },
+            { ""comparison"", ""exists"" }, { ""timeoutSeconds"", ""30"" }
+        });
+        context.Log(""The declared target UI was observed."");
     }
 }
 ";

@@ -5,6 +5,25 @@ using System.IO;
 
 namespace UnityAutorun.Scripting
 {
+    [AutoRunScript("start-play-mode", "启动 Play Mode", AutoRunScriptKind.Basic,
+        Description = "Declares initial Play Mode preparation for a root run. A business caller must also declare PreparePlayMode=true; this dependency never switches modes during a running iterator.",
+        Preconditions = "The runner has completed initial Play Mode preparation before execution.", PreparePlayMode = true)]
+    public sealed class AutoRunStartPlayModeScript : AutoRunScript
+    {
+        public override string CheckPreconditions(AutoRunScriptContext context)
+        {
+            return context.Host.IsPlaying ? null : "Play Mode was not prepared before this flow. Declare PreparePlayMode=true on the root script.";
+        }
+
+        public override IEnumerator Execute(AutoRunScriptContext context)
+        {
+            if (!context.Host.IsPlaying)
+                context.Fail("play_mode_required", "Play Mode must be prepared before the first script instruction.");
+            context.Log("Play Mode preparation completed; the game remains running.");
+            yield break;
+        }
+    }
+
     [AutoRunScript("click-button", "点击 UI 按钮", AutoRunScriptKind.Basic,
         Description = "Parameters: name or text (required), objectPath/scope (optional refinements), framework(ugui|fairygui)/matchPolicy. UGUI uses a real EventSystem pointer click.",
         Preconditions = "Play Mode, an active EventSystem and a uniquely identifiable reachable button.")]

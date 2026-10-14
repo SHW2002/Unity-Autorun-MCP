@@ -133,6 +133,7 @@ namespace UnityAutorun.Scripting
             {
                 Id = attribute.Id, Name = attribute.Name, Kind = attribute.Kind,
                 Description = attribute.Description, Preconditions = attribute.Preconditions,
+                PreparePlayMode = attribute.PreparePlayMode,
                 Dependencies = attribute.Dependencies == null ? new string[0] : (string[])attribute.Dependencies.Clone(), ClassName = type.FullName
             };
             string error = null;
@@ -184,8 +185,12 @@ namespace UnityAutorun.Scripting
             RememberRecent(request);
             _activeRequest = request;
             string validation = _runner.Validate(scriptId);
+            // Only the selected root may request initial preparation. A child that
+            // requires Play Mode must validate it; never switch modes mid-iterator.
+            AutoRunScriptDefinition rootDefinition = Definitions.FirstOrDefault(definition => definition.Id == scriptId);
+            bool preparePlayMode = ensurePlayMode || (rootDefinition != null && rootDefinition.PreparePlayMode);
             if (validation != null) FailPending(request, "script_validation_failed", validation);
-            else if (ensurePlayMode && !EditorApplication.isPlaying)
+            else if (preparePlayMode && !EditorApplication.isPlaying)
             {
                 request.WaitingForPlayMode = true;
                 request.Status.Message = "Waiting for initial entry into Play Mode; no script steps have run.";

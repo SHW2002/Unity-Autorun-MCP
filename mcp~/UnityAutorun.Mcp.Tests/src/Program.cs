@@ -22,6 +22,7 @@ namespace UnityAutorun.Mcp.Tests
             ("invalid bridge profiles fail without touching endpoints", TestInvalidBridgeProfile),
             ("script source reads stay inside generated directory", TestSourceBoundary),
             ("start_script normalizes parameters and preserves retry IDs", TestScriptRequests),
+            ("MCP preserves root preparation metadata without a new start argument", TestScriptPreparationMetadata),
             ("status polling preserves terminal failure detail", TestStatusPolling),
             ("MCP framed UTF-8 and JSONL protocol share the contract", TestProtocol),
             ("script guidance describes strict flows and current APIs", TestGuidance),
@@ -269,6 +270,36 @@ namespace UnityAutorun.Mcp.Tests
             AssertEqual("failed", Text(result["data"]["scriptRun"].AsObject(), "state"), "Terminal result was lost.");
             AssertEqual(2, result["data"]["scriptRun"]["logs"].AsArray().Count, "Failure logs were lost.");
             AssertEqual(1, result["data"]["scriptRun"]["artifacts"].AsArray().Count, "Failure artifacts were lost.");
+        }
+
+        private static void TestScriptPreparationMetadata()
+        {
+            JsonObject metadata = JsonUtil.Obj(("id", "business.cold-start"), ("preparePlayMode", true),
+                ("dependencies", new JsonArray { "start-play-mode" }));
+            JsonObject receivedStart = null;
+            var dispatcher = new ToolDispatcher((command, payload) =>
+            {
+                if (command == "get_script")
+                    return Task.FromResult<JsonNode>(JsonUtil.Obj(("ok", true), ("data", JsonUtil.Obj(("script", metadata.DeepClone())))));
+                if (command == "list_scripts")
+                    return Task.FromResult<JsonNode>(JsonUtil.Obj(("ok", true), ("data", JsonUtil.Obj(("scripts", new JsonArray
+                    {
+                        metadata.DeepClone(), JsonUtil.Obj(("id", "business.already-running"), ("preparePlayMode", false))
+                    })))));
+                receivedStart = payload;
+                return Task.FromResult<JsonNode>(JsonUtil.Obj(("ok", true)));
+            });
+            JsonNode script = dispatcher.DispatchAsync("get_script", JsonUtil.Obj(("scriptId", "business.cold-start"),
+                ("includeSource", false))).GetAwaiter().GetResult();
+            AssertTrue(Boolean(script["data"]["script"].AsObject(), "preparePlayMode"), "get_script dropped compiled root preparation metadata.");
+            JsonNode list = dispatcher.DispatchAsync("list_scripts", new JsonObject()).GetAwaiter().GetResult();
+            AssertTrue(Boolean(list["data"]["scripts"][0].AsObject(), "preparePlayMode"), "list_scripts dropped true root metadata.");
+            AssertFalse(Boolean(list["data"]["scripts"][1].AsObject(), "preparePlayMode"), "list_scripts changed false root metadata.");
+            dispatcher.DispatchAsync("start_script", JsonUtil.Obj(("scriptId", "business.cold-start"))).GetAwaiter().GetResult();
+            AssertFalse(Boolean(receivedStart, "ensurePlayMode"), "MCP replaced the original caller preparation option.");
+            AssertFalse(receivedStart.ContainsKey("preparePlayMode"), "Compiled metadata was incorrectly added as a start request argument.");
+            JsonObject schema = McpTools.All().First(tool => Text(tool.AsObject(), "name") == "start_script")["inputSchema"].AsObject();
+            AssertFalse(schema["properties"].AsObject().ContainsKey("preparePlayMode"), "Start schema exposes compiled metadata as a caller setting.");
         }
 
         private static void TestProtocol()
