@@ -31,13 +31,15 @@ public partial class AutoRunWindow
             "Source version comes from UnityAutorun.Mcp.csproj. Published version "
                 + "comes from the current Release DLL.");
 
-        SkillInstallStatus skillStatus = GetSkillInstallStatus();
-        RenderVersionRow(
-            "Skill",
-            BuildSkillVersionText(skillStatus),
-            skillStatus.IsTargetValid
-                ? skillStatus.InstallDirectory
-                : skillStatus.Error);
+        foreach (SkillInstallStatus skillStatus in GetSkillInstallStatuses())
+        {
+            RenderVersionRow("Skill", skillStatus.Name + " | " + BuildSkillVersionText(skillStatus),
+                skillStatus.IsTargetValid ? skillStatus.InstallDirectory : skillStatus.Error);
+        }
+        if (SkillInstallService.HasLegacySkill(_mcpInstallTargetPath))
+        {
+            EditorGUILayout.HelpBox("Legacy unity-autorun is still installed. Review custom changes and uninstall it manually; this installer preserves it.", MessageType.Info);
+        }
 
         ResponsiveRow updates = BeginResponsiveRow(8f);
         updates.Add(52f);

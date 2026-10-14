@@ -1,0 +1,9 @@
+interface:
+  display_name: "Run Unity Script"
+  short_description: "Run and verify an existing Unity automation script"
+  default_prompt: "Use $run-script to run the existing Unity Autorun script for this request and verify its result."
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "unity-autorun"
+      description: "Unity Autorun script discovery, execution, cancellation and UI assertions"

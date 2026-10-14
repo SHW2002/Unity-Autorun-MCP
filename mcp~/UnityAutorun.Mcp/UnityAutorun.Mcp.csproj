@@ -5,7 +5,7 @@
     <LangVersion>7.3</LangVersion>
     <ImplicitUsings>disable</ImplicitUsings>
     <AssemblyName>UnityAutorun.Mcp</AssemblyName>
-    <Version>0.2.6</Version>
+    <Version>0.3.0</Version>
   </PropertyGroup>
 
   <ItemGroup>
@@ -25,7 +25,7 @@
     <ArchiveType Condition="'$(SelfContained)' != 'true'">portable</ArchiveType>
   </PropertyGroup>
 
-  <Target Name="ArchivePublishOutput" AfterTargets="Publish" Condition="'$(Configuration)' == 'Release'">
+  <Target Name="ArchivePublishOutput" AfterTargets="Publish">
     <PropertyGroup>
       <ArchiveTimestamp>$([System.DateTime]::Now.ToString('yyMMdd-HHmmss'))</ArchiveTimestamp>
       <ArchiveName>UnityAutorun.Mcp-$(ArchivePlatform)-$(ArchiveType)-$(ArchiveTimestamp)</ArchiveName>

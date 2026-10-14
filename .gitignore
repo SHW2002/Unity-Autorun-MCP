@@ -3,5 +3,7 @@ Config
 Logs/
 Logs.meta
 bin/
+bin.meta
 obj/
+obj.meta
 skill~/**/*.zip

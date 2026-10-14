@@ -4,344 +4,254 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.Json.Nodes;
+using System.Threading.Tasks;
 using UnityAutorun.Mcp;
 
 namespace UnityAutorun.Mcp.Tests
 {
     internal static class Program
     {
-        private static readonly List<(string Name, Action Test)> Tests =
-            new List<(string Name, Action Test)>
-            {
-                ("incremental merge is idempotent and preserves fields", TestIncrementalMerge),
-                ("full map save is creation-only", TestCreationOnlySave),
-                ("default map path is scoped to Unity ProjectSettings", TestProjectScopedMapPaths),
-                ("relative project root resolves from nested workspaces", TestRelativeProjectRootResolution),
-                ("candidate identity ignores source line movement", TestCandidateIdentityStability),
-                ("finalization and no-op patches are byte-stable", TestFinalizationIdempotence),
-                ("Codex MCP installs with a portable project root", TestCodexMcpInstall),
-                ("Claude Code MCP installs at the project root", TestClaudeCodeMcpInstall),
-                ("Claude Desktop MCP preserves existing servers", TestClaudeDesktopMcpInstall)
-            };
+        private static readonly List<(string Name, Action Test)> Tests = new List<(string Name, Action Test)>
+        {
+            ("MCP registers script tools and removes map tools", TestToolRegistration),
+            ("script creation never replaces existing bytes", TestCreationOnlyScript),
+            ("script creation rejects traversal and non-C# paths", TestScriptPathBoundary),
+            ("project roots resolve from nested client workspaces", TestProjectRootResolution),
+            ("script source reads stay inside generated directory", TestSourceBoundary),
+            ("start_script normalizes parameters and preserves retry IDs", TestScriptRequests),
+            ("status polling preserves terminal failure detail", TestStatusPolling),
+            ("MCP framed UTF-8 and JSONL protocol share the contract", TestProtocol),
+            ("script guidance describes strict flows and current APIs", TestGuidance),
+            ("CLI help exposes script commands without navigation maps", TestCliHelp),
+            ("Codex MCP installs with a portable project root", TestCodexMcpInstall),
+            ("Claude Code MCP installs at the project root", TestClaudeCodeMcpInstall),
+            ("Claude Desktop MCP preserves existing servers", TestClaudeDesktopMcpInstall)
+        };
 
         private static int Main()
         {
+            Tests.AddRange(ScriptRuntimeTests.Cases());
             int failed = 0;
             foreach ((string name, Action test) in Tests)
             {
-                try
-                {
-                    test();
-                    Console.WriteLine("PASS " + name);
-                }
-                catch (Exception exception)
-                {
-                    failed++;
-                    Console.Error.WriteLine("FAIL " + name + ": " + exception);
-                }
+                try { test(); Console.WriteLine("PASS " + name); }
+                catch (Exception exception) { failed++; Console.Error.WriteLine("FAIL " + name + ": " + exception); }
             }
-
             Console.WriteLine((Tests.Count - failed) + "/" + Tests.Count + " tests passed.");
             return failed == 0 ? 0 : 1;
         }
 
-        private static void TestIncrementalMerge()
+        private static void TestToolRegistration()
         {
-            WithTemporaryDirectory(root =>
+            JsonArray tools = McpTools.All();
+            string[] names = tools.Select(tool => tool["name"].GetValue<string>()).ToArray();
+            foreach (string name in new[] { "get_script_guidance", "list_scripts", "get_script", "create_script", "refresh_scripts", "start_script", "get_script_status", "cancel_script", "unity_status", "unity_play", "unity_stop", "get_ui_state", "wait_for_ui_state" })
+                AssertTrue(names.Contains(name), "Missing tool: " + name);
+            AssertEqual(names.Length, names.Distinct().Count(), "Duplicate tools were registered.");
+            AssertFalse(names.Any(name => name.Contains("nav") || name.Contains("route")), "Legacy navigation tools remain registered.");
+            JsonNode creation = tools.First(tool => Text(tool.AsObject(), "name") == "create_script")["inputSchema"];
+            AssertEqual("path,source", string.Join(",", creation["required"].AsArray().Select(item => item.GetValue<string>())), "Creation schema omits required fields.");
+            AssertFalse(creation["additionalProperties"].GetValue<bool>(), "Creation schema accepts undeclared options.");
+        }
+
+        private static void TestCreationOnlyScript()
+        {
+            WithUnityProject(root =>
             {
-                string mapPath = Path.Combine(root, "ui-nav-map.json");
-                JsonObject initialPatch = JsonUtil.Obj(
-                    ("views", new JsonArray
-                    {
-                        JsonUtil.Obj(("id", "view.a"), ("name", "UIFormA"))
-                    }),
-                    ("controls", new JsonArray
-                    {
-                        JsonUtil.Obj(
-                            ("id", "control.a.open"),
-                            ("viewId", "view.a"),
-                            ("name", "Open_ExButton"),
-                            ("autoRun", JsonUtil.Obj(
-                                ("buttonName", "Open_ExButton"),
-                                ("buttonText", "untitled"),
-                                ("delay", 0.5)))
-                        )
-                    })
-                );
-                JsonObject created = UiNavMapPatchTools.MergePatch(JsonUtil.Obj(
-                    ("mapPath", mapPath),
-                    ("patch", initialPatch)
-                ));
-                AssertTrue(Boolean(created, "writePerformed"), "Initial patch was not written.");
-
-                string beforeNoOp = File.ReadAllText(mapPath);
-                JsonObject noOpPatch = JsonUtil.Obj(
-                    ("controls", new JsonArray
-                    {
-                        JsonUtil.Obj(
-                            ("autoRun", JsonUtil.Obj(
-                                ("delay", 0.5),
-                                ("buttonText", "untitled"),
-                                ("buttonName", "Open_ExButton"))),
-                            ("name", "Open_ExButton"),
-                            ("id", "control.a.open"))
-                    })
-                );
-                JsonObject noOp = UiNavMapPatchTools.MergePatch(JsonUtil.Obj(
-                    ("mapPath", mapPath),
-                    ("patch", noOpPatch)
-                ));
-                AssertFalse(Boolean(noOp, "writePerformed"), "Equivalent patch rewrote the map.");
-                AssertEqual(beforeNoOp, File.ReadAllText(mapPath), "Equivalent patch changed file bytes.");
-
-                JsonObject delayPatch = JsonUtil.Obj(
-                    ("controls", new JsonArray
-                    {
-                        JsonUtil.Obj(
-                            ("id", "control.a.open"),
-                            ("autoRun", JsonUtil.Obj(("delay", 1.25)))
-                        )
-                    })
-                );
-                JsonObject rejected = UiNavMapPatchTools.MergePatch(JsonUtil.Obj(
-                    ("mapPath", mapPath),
-                    ("patch", delayPatch)
-                ));
-                AssertFalse(Boolean(rejected, "ok"), "Conflicting update was accepted without authorization.");
-
-                JsonObject updated = UiNavMapPatchTools.MergePatch(JsonUtil.Obj(
-                    ("mapPath", mapPath),
-                    ("patch", delayPatch.DeepClone()),
-                    ("allowConflicts", true)
-                ));
-                AssertTrue(Boolean(updated, "writePerformed"), "Authorized update was not written.");
-                JsonObject map = ParseObject(File.ReadAllText(mapPath));
-                JsonObject control = map["controls"].AsArray()[0].AsObject();
-                JsonObject autoRun = control["autoRun"].AsObject();
-                AssertEqual("Open_ExButton", Text(autoRun, "buttonName"), "Nested buttonName was lost.");
-                AssertEqual("untitled", Text(autoRun, "buttonText"), "Nested buttonText was lost.");
-                AssertEqual(1.25, autoRun["delay"].GetValue<double>(), "Nested delay was not updated.");
-
-                JsonObject removePatch = JsonUtil.Obj(
-                    ("controls", new JsonArray
-                    {
-                        JsonUtil.Obj(
-                            ("id", "control.a.open"),
-                            ("autoRun", new JsonObject { ["buttonText"] = null })
-                        )
-                    })
-                );
-                UiNavMapPatchTools.MergePatch(JsonUtil.Obj(
-                    ("mapPath", mapPath),
-                    ("patch", removePatch),
-                    ("allowConflicts", true)
-                ));
-                map = ParseObject(File.ReadAllText(mapPath));
-                autoRun = map["controls"].AsArray()[0]["autoRun"].AsObject();
-                AssertFalse(autoRun.ContainsKey("buttonText"), "Explicit null did not remove the nested field.");
-                AssertEqual("Open_ExButton", Text(autoRun, "buttonName"), "Removing one field changed a sibling field.");
+                const string source = "// 中文业务脚本\npublic class NewScript {}\n";
+                JsonObject created = ScriptFiles.Create(JsonUtil.Obj(("path", "Business/NewScript.cs"), ("source", source)));
+                AssertTrue(Boolean(created, "ok"), "Initial script was not created.");
+                string path = Path.Combine(root, ProjectPaths.GeneratedScriptsRelativePath, "Business", "NewScript.cs");
+                AssertEqual(source, File.ReadAllText(path), "Source bytes changed during creation.");
+                AssertEqual("Assets/AutorunScripts/Editor/Business/NewScript.cs", Text(created["data"].AsObject(), "sourcePath"), "Returned path is not project-relative.");
+                AssertTrue(Boolean(created["data"].AsObject(), "requiresRefresh"), "Creation did not report pending compilation.");
+                byte[] original = File.ReadAllBytes(path);
+                JsonObject rejected = ScriptFiles.Create(JsonUtil.Obj(("path", "Business/NewScript.cs"), ("source", "replacement")));
+                AssertFalse(Boolean(rejected, "ok"), "Creation overwrote an existing script.");
+                AssertEqual("script_exists", Text(rejected, "code"), "Unexpected duplicate error.");
+                AssertTrue(original.SequenceEqual(File.ReadAllBytes(path)), "Rejected creation modified the file.");
             });
         }
 
-        private static void TestCreationOnlySave()
+        private static void TestScriptPathBoundary()
         {
-            WithTemporaryToolRoot((toolRoot, mapPath) =>
+            WithUnityProject(root =>
             {
-                JsonObject map = EmptyMap();
-                JsonObject created = UiNavMapWriter.Save(JsonUtil.Obj(("map", map)));
-                AssertTrue(Boolean(created, "ok"), "Initial full map creation failed.");
-                string original = File.ReadAllText(mapPath);
-
-                JsonObject replacement = EmptyMap();
-                replacement["views"].AsArray().Add(JsonUtil.Obj(
-                    ("id", "view.replacement"),
-                    ("name", "Replacement")));
-                JsonObject rejected = UiNavMapWriter.Save(JsonUtil.Obj(("map", replacement)));
-                AssertFalse(Boolean(rejected, "ok"), "Existing map accepted a full replacement.");
-                AssertEqual("nav_map_exists_use_patch", Text(rejected, "code"), "Unexpected replacement error code.");
-                AssertEqual(original, File.ReadAllText(mapPath), "Rejected full replacement changed file bytes.");
+                foreach (string path in new[] { "../Escape.cs", "Business/../../Escape.cs", "..\\Escape.cs", "Assets/../../../Escape.cs", "Other.cs/Bad.cs", "test.json", "test.cs.meta", "test.cs:stream", "test.cs.", "C:\\outside.cs", "/outside.cs", "Business//Flow.cs", "./Flow.cs", "Business /Flow.cs" })
+                {
+                    // A directory with a .cs suffix is allowed but cannot escape the root.
+                    if (path == "Other.cs/Bad.cs") continue;
+                    JsonObject result = ScriptFiles.Create(JsonUtil.Obj(("path", path), ("source", "unsafe")));
+                    AssertFalse(Boolean(result, "ok"), "Unsafe path was accepted: " + path);
+                    AssertEqual("invalid_script_path", Text(result, "code"), "Unexpected path error: " + path);
+                }
+                AssertFalse(File.Exists(Path.Combine(root, "Escape.cs")), "Path traversal wrote outside script directory.");
+                AssertFalse(Directory.Exists(Path.Combine(root, ProjectPaths.GeneratedScriptsRelativePath)), "Invalid path requests created script directories.");
             });
         }
 
-        private static void TestProjectScopedMapPaths()
+        private static void TestProjectRootResolution()
         {
-            WithTemporaryToolRoot((toolRoot, mapPath) =>
+            WithUnityProject(root =>
             {
-                string projectRoot = UiNavMapPaths.ResolveProjectRootDirectory();
-                AssertEqual(
-                    Path.GetFullPath(Path.Combine(projectRoot, UiNavMapPaths.DefaultRelativePath)),
-                    mapPath,
-                    "The test map path is not under Unity ProjectSettings.");
-                AssertEqual(
-                    mapPath,
-                    UiNavMapPaths.ResolveDefaultMapPath(),
-                    "The default map path is not scoped to the Unity project.");
-                AssertEqual(
-                    Path.GetFullPath(Path.Combine(projectRoot, "ProjectSettings", "custom-map.json")),
-                    UiNavMapPaths.ResolveMapPath("ProjectSettings/custom-map.json"),
-                    "A relative map path was not resolved from the Unity project root.");
-                AssertEqual(
-                    Path.GetFullPath(Path.Combine(toolRoot, UiNavMapPaths.ExampleRelativePath)),
-                    UiNavMapPaths.ResolveExampleMapPath(),
-                    "The example map path is not scoped to the package root.");
-
+                string originalDirectory = Environment.CurrentDirectory;
+                string originalConfiguredRoot = Environment.GetEnvironmentVariable("UNITY_AUTORUN_PROJECT_ROOT");
                 try
                 {
-                    Environment.SetEnvironmentVariable(
-                        "UNITY_AUTORUN_NAV_MAP",
-                        "ProjectSettings/custom-map.json");
-                    AssertEqual(
-                        Path.GetFullPath(Path.Combine(projectRoot, "ProjectSettings", "custom-map.json")),
-                        UiNavMapPaths.ResolveDefaultMapPath(),
-                        "The navigation map environment override was not resolved from the Unity project root.");
+                    string workspace = Path.Combine(root, "Tools", "Client", "Nested");
+                    Directory.CreateDirectory(workspace);
+                    Environment.CurrentDirectory = workspace;
+                    Environment.SetEnvironmentVariable("UNITY_AUTORUN_PROJECT_ROOT", ".");
+                    AssertEqual(Path.GetFullPath(root), ProjectPaths.ResolveProjectRootDirectory(), "Relative root was not resolved against ancestor workspaces.");
                 }
                 finally
                 {
-                    Environment.SetEnvironmentVariable("UNITY_AUTORUN_NAV_MAP", null);
+                    Environment.CurrentDirectory = originalDirectory;
+                    Environment.SetEnvironmentVariable("UNITY_AUTORUN_PROJECT_ROOT", originalConfiguredRoot);
                 }
             });
         }
 
-        private static void TestRelativeProjectRootResolution()
+        private static void TestSourceBoundary()
         {
-            WithTemporaryDirectory(root =>
+            WithUnityProject(root =>
             {
-                string workspaceRoot = Path.Combine(root, "Repository");
-                string projectRoot = Path.Combine(workspaceRoot, "Unity");
-                string nestedDirectory = Path.Combine(workspaceRoot, "Source", "Nested");
-                Directory.CreateDirectory(Path.Combine(projectRoot, "Assets"));
-                Directory.CreateDirectory(Path.Combine(projectRoot, "ProjectSettings"));
-                Directory.CreateDirectory(nestedDirectory);
+                const string source = "// correct source";
+                ScriptFiles.Create(JsonUtil.Obj(("path", "Flow.cs"), ("source", source)));
+                Func<string, JsonNode> response = path => JsonUtil.Obj(("ok", true), ("data", JsonUtil.Obj(("script", JsonUtil.Obj(("id", "flow"), ("sourcePath", path))))));
+                JsonNode loaded = ScriptFiles.IncludeSource(response("Assets/AutorunScripts/Editor/Flow.cs"), true);
+                AssertEqual(source, Text(loaded["data"]["script"].AsObject(), "source"), "Generated source was not included.");
+                ScriptFiles.IncludeSource(loaded, false);
+                AssertFalse(loaded["data"]["script"].AsObject().ContainsKey("source"), "includeSource=false still returned source.");
+                string outside = Path.Combine(root, "ProjectSettings", "secret.cs");
+                File.WriteAllText(outside, "must-not-read");
+                JsonNode rejected = ScriptFiles.IncludeSource(response(outside), true);
+                AssertFalse(rejected["data"]["script"].AsObject().ContainsKey("source"), "Source reading escaped the script directory.");
+                AssertTrue(rejected["data"]["script"].AsObject().ContainsKey("sourceError"), "Rejected source path was not diagnosed.");
+            });
+        }
 
-                string oldCurrentDirectory = Environment.CurrentDirectory;
-                string oldProjectRoot = Environment.GetEnvironmentVariable(
-                    "UNITY_AUTORUN_PROJECT_ROOT");
-                string oldToolRoot = Environment.GetEnvironmentVariable(
-                    "UNITY_AUTORUN_TOOL_ROOT");
+        private static void TestScriptRequests()
+        {
+            int calls = 0;
+            string receivedCommand = null;
+            JsonObject received = null;
+            var dispatcher = new ToolDispatcher((command, payload) =>
+            {
+                calls++;
+                receivedCommand = command;
+                received = payload;
+                return Task.FromResult<JsonNode>(JsonUtil.Obj(("ok", true)));
+            });
+            JsonNode result = dispatcher.DispatchAsync("start_script", JsonUtil.Obj(("scriptId", "business.flow"),
+                ("parameters", JsonUtil.Obj(("name", "中文按钮"), ("count", "3"))), ("runId", "retry-id"),
+                ("ensurePlayMode", true), ("timeoutSeconds", 45.5))).GetAwaiter().GetResult();
+            AssertTrue(Boolean(result.AsObject(), "ok"), "Valid start was rejected.");
+            AssertEqual("start_script", receivedCommand, "Wrong bridge command.");
+            AssertEqual("retry-id", Text(received, "runId"), "Explicit retry ID changed.");
+            AssertEqual("中文按钮", Text(ParseObject(Text(received, "parametersJson")), "name"), "Unicode parameter changed.");
+            AssertTrue(Boolean(received, "ensurePlayMode"), "Explicit Play Mode option was lost.");
+            AssertEqual(45.5, received["timeoutSeconds"].GetValue<double>(), "Timeout changed.");
+            AssertFalse(received.ContainsKey("parameters"), "Bridge receives the wrong parameter representation.");
+            JsonObject defaults = ScriptRequests.Start(JsonUtil.Obj(("scriptId", "business.flow"), ("parameters", "{\"count\":\"4\"}")));
+            AssertFalse(Boolean(defaults, "ensurePlayMode"), "Play Mode was implicitly requested.");
+            AssertTrue(!string.IsNullOrEmpty(Text(defaults, "runId")), "Generated retry ID is missing.");
+            AssertEqual("4", Text(ParseObject(Text(defaults, "parametersJson")), "count"), "JSON string parameters were not normalized.");
+            int beforeRejected = calls;
+            foreach (JsonObject invalid in new[]
+            {
+                JsonUtil.Obj(("scriptId", "flow"), ("parameters", JsonUtil.Obj(("numeric", 3)))),
+                JsonUtil.Obj(("scriptId", "flow"), ("parametersJson", "null")),
+                JsonUtil.Obj(("scriptId", "flow"), ("parametersJson", "[]")),
+                JsonUtil.Obj(("scriptId", "flow"), ("parametersJson", "bad-json")),
+                JsonUtil.Obj(("scriptId", "flow"), ("parametersJson", "{}"), ("parameters", new JsonObject())),
+                JsonUtil.Obj(("scriptId", "flow"), ("timeoutSeconds", 0)),
+                new JsonObject()
+            })
+            {
+                JsonNode failed = dispatcher.DispatchAsync("start_script", invalid).GetAwaiter().GetResult();
+                AssertFalse(Boolean(failed.AsObject(), "ok"), "Invalid script start was accepted.");
+            }
+            AssertEqual(beforeRejected, calls, "Invalid start reached the bridge.");
+        }
+
+        private static void TestStatusPolling()
+        {
+            int calls = 0;
+            var dispatcher = new ToolDispatcher((command, payload) =>
+            {
+                AssertEqual("get_script_status", command, "Polling used the wrong command.");
+                AssertEqual(1, payload.Count, "Polling options were sent to Unity.");
+                AssertEqual("run-test", Text(payload, "runId"), "Polling changed the run ID.");
+                calls++;
+                bool terminal = calls > 1;
+                return Task.FromResult<JsonNode>(JsonUtil.Obj(("ok", !terminal), ("code", terminal ? "precondition_failed" : "ok"),
+                    ("data", JsonUtil.Obj(("scriptRun", JsonUtil.Obj(("runId", "run-test"), ("terminal", terminal),
+                        ("state", terminal ? "failed" : "running"), ("logs", new JsonArray { "child completed", "wrong start" }),
+                        ("artifacts", new JsonArray { "artifact.png" })))))));
+            });
+            JsonNode result = dispatcher.DispatchAsync("get_script_status", JsonUtil.Obj(("runId", "run-test"), ("waitMs", 500), ("pollMs", 50))).GetAwaiter().GetResult();
+            AssertEqual(2, calls, "Status did not poll until terminal.");
+            AssertFalse(Boolean(result.AsObject(), "ok"), "Terminal failure was turned into success.");
+            AssertEqual("failed", Text(result["data"]["scriptRun"].AsObject(), "state"), "Terminal result was lost.");
+            AssertEqual(2, result["data"]["scriptRun"]["logs"].AsArray().Count, "Failure logs were lost.");
+            AssertEqual(1, result["data"]["scriptRun"]["artifacts"].AsArray().Count, "Failure artifacts were lost.");
+        }
+
+        private static void TestProtocol()
+        {
+            string initialize = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\"}\n";
+            string call = "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"get_script\",\"arguments\":{\"scriptId\":\"业务.目标\",\"includeSource\":false}}}";
+            string list = "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/list\"}\n";
+            string input = initialize + "Content-Length: " + Encoding.UTF8.GetByteCount(call) + "\r\n\r\n" + call + "\n" + "broken-json\n" + list;
+            var dispatcher = new ToolDispatcher((command, payload) =>
+            {
+                AssertEqual("业务.目标", Text(payload, "scriptId"), "Framed UTF-8 script ID changed.");
+                return Task.FromResult<JsonNode>(JsonUtil.Obj(("ok", false), ("code", "script_not_found"), ("data", new JsonObject())));
+            });
+            using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(input)))
+            using (var output = new StringWriter())
+            {
+                new McpServer(dispatcher).RunAsync(stream, output).GetAwaiter().GetResult();
+                JsonObject[] messages = output.ToString().Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries).Select(ParseObject).ToArray();
+                AssertEqual(4, messages.Length, "Framing or malformed-message recovery lost a response.");
+                AssertEqual(McpVersion.Current, Text(messages[0]["result"]["serverInfo"].AsObject(), "version"), "MCP version is not sourced from the assembly.");
+                AssertTrue(Boolean(messages[1]["result"].AsObject(), "isError"), "Tool failure was not marked as an MCP error.");
+                AssertEqual("script_not_found", Text(ParseObject(messages[1]["result"]["content"][0]["text"].GetValue<string>()), "code"), "Tool failure detail was lost.");
+                AssertEqual(-32700, messages[2]["error"]["code"].GetValue<int>(), "Malformed JSON used the wrong error code.");
+                AssertTrue(messages[3]["result"]["tools"].AsArray().Count > 0, "Protocol did not recover after malformed JSON.");
+            }
+        }
+
+        private static void TestGuidance()
+        {
+            WithUnityProject(root =>
+            {
+                JsonObject data = ScriptGuidance.Get()["data"].AsObject();
+                AssertEqual(ProjectPaths.GeneratedScriptsRelativePath, Text(data, "scriptDirectory"), "Guidance uses the wrong host directory.");
+                AssertEqual("gen-script,run-script", string.Join(",", data["skills"].AsArray().Select(value => value.GetValue<string>())), "Guidance has obsolete skill names.");
+                string contract = data.ToJsonString();
+                AssertTrue(contract.Contains("CheckPreconditions") && contract.Contains("Never edit reused scripts"), "Strict business-flow contract is missing.");
+                AssertTrue(ScriptGuidance.Template.Contains("AutoRunScriptKind.Business") && ScriptGuidance.Template.Contains("context.Call"), "Template omits runtime composition.");
+                AssertFalse(contract.Contains("nav_map") || contract.Contains("start_ui_navigation"), "Guidance still requires old navigation tools.");
+            });
+        }
+
+        private static void TestCliHelp()
+        {
+            TextWriter original = Console.Out;
+            using (var output = new StringWriter())
+            {
                 try
                 {
-                    Environment.CurrentDirectory = nestedDirectory;
-                    Environment.SetEnvironmentVariable(
-                        "UNITY_AUTORUN_PROJECT_ROOT",
-                        "Unity");
-                    Environment.SetEnvironmentVariable(
-                        "UNITY_AUTORUN_TOOL_ROOT",
-                        null);
-                    AssertEqual(
-                        Path.GetFullPath(projectRoot),
-                        UiNavMapPaths.ResolveProjectRootDirectory(),
-                        "A relative Unity project root was not resolved from a workspace ancestor.");
-
-                    Environment.CurrentDirectory = Path.Combine(projectRoot, "Assets");
-                    Environment.SetEnvironmentVariable(
-                        "UNITY_AUTORUN_PROJECT_ROOT",
-                        ".");
-                    AssertEqual(
-                        Path.GetFullPath(projectRoot),
-                        UiNavMapPaths.ResolveProjectRootDirectory(),
-                        "A dot project root was not resolved from inside the Unity project.");
+                    Console.SetOut(output);
+                    AssertEqual(0, CliApp.RunAsync(new[] { "help" }).GetAwaiter().GetResult(), "CLI help failed.");
+                    string help = output.ToString();
+                    AssertTrue(help.Contains("start-script") && help.Contains("create-script"), "Script commands are missing from CLI help.");
+                    AssertFalse(help.Contains("nav-map") || help.Contains("run-route"), "Legacy map CLI commands remain.");
                 }
-                finally
-                {
-                    Environment.CurrentDirectory = oldCurrentDirectory;
-                    Environment.SetEnvironmentVariable(
-                        "UNITY_AUTORUN_PROJECT_ROOT",
-                        oldProjectRoot);
-                    Environment.SetEnvironmentVariable(
-                        "UNITY_AUTORUN_TOOL_ROOT",
-                        oldToolRoot);
-                }
-            });
-        }
-
-        private static void TestCandidateIdentityStability()
-        {
-            WithTemporaryToolRoot((toolRoot, mapPath) =>
-            {
-                string assetsRoot = FindAssetsRoot();
-                string scripts = Path.Combine(assetsRoot, "Scripts");
-                Directory.CreateDirectory(scripts);
-                string sourcePath = Path.Combine(scripts, "UIFormA.cs");
-                File.WriteAllText(sourcePath, CandidateSource("UIFormB", 0));
-                JsonObject first = TraceCandidate(mapPath, "UIFormA", "UIFormB");
-
-                File.WriteAllText(sourcePath, CandidateSource("UIFormB", 8));
-                JsonObject second = TraceCandidate(mapPath, "UIFormA", "UIFormB");
-                AssertEqual(Text(first, "id"), Text(second, "id"), "Blank lines changed candidate id.");
-                AssertEqual(Text(first, "candidateVersion"), Text(second, "candidateVersion"), "Blank lines changed candidate evidence version.");
-
-                File.WriteAllText(sourcePath, CandidateSource("UIFormC", 8));
-                JsonObject changed = TraceCandidate(mapPath, "UIFormA", "UIFormC");
-                AssertNotEqual(Text(first, "id"), Text(changed, "id"), "A target-view change did not change candidate id.");
-            });
-        }
-
-        private static void TestFinalizationIdempotence()
-        {
-            WithTemporaryToolRoot((toolRoot, mapPath) =>
-            {
-                string assetsRoot = FindAssetsRoot();
-                string scripts = Path.Combine(assetsRoot, "Scripts");
-                Directory.CreateDirectory(scripts);
-                File.WriteAllText(
-                    Path.Combine(scripts, "UIFormA.cs"),
-                    CandidateSource("UIFormB", 0));
-                JsonObject candidate = TraceCandidate(mapPath, "UIFormA", "UIFormB");
-                JsonObject patch = JsonUtil.Obj(
-                    ("views", new JsonArray
-                    {
-                        JsonUtil.Obj(("id", "view.a"), ("name", "UIFormA")),
-                        JsonUtil.Obj(("id", "view.b"), ("name", "UIFormB"))
-                    }),
-                    ("transitions", new JsonArray
-                    {
-                        JsonUtil.Obj(
-                            ("id", "transition.a.open.to.b"),
-                            ("fromViewId", "view.a"),
-                            ("toViewId", "view.b"),
-                            ("kind", "interaction"),
-                            ("automation", JsonUtil.Obj(("mode", "click"))))
-                    }),
-                    ("candidateDecisions", new JsonArray
-                    {
-                        JsonUtil.Obj(
-                            ("id", Text(candidate, "id")),
-                            ("candidateVersion", Text(candidate, "candidateVersion")),
-                            ("outcome", "transition"),
-                            ("targetId", "transition.a.open.to.b"))
-                    })
-                );
-                JsonObject merged = UiNavMapPatchTools.MergePatch(JsonUtil.Obj(
-                    ("mapPath", mapPath),
-                    ("patch", patch)
-                ));
-                AssertTrue(Boolean(merged, "ok"), "Fixture map merge failed.");
-
-                JsonObject finalized = Finalize(mapPath, "UIFormA", "UIFormB");
-                AssertTrue(Boolean(finalized, "completionGatePassed"), "Initial finalization failed.");
-                AssertTrue(Boolean(finalized, "writePerformed"), "Initial finalization did not write the map.");
-                string finalizedBytes = File.ReadAllText(mapPath);
-
-                JsonObject repeated = Finalize(mapPath, "UIFormA", "UIFormB");
-                AssertTrue(Boolean(repeated, "completionGatePassed"), "Repeated finalization failed.");
-                AssertFalse(Boolean(repeated, "writePerformed"), "Repeated finalization rewrote the map.");
-                AssertEqual(finalizedBytes, File.ReadAllText(mapPath), "Repeated finalization changed file bytes.");
-
-                JsonObject noOpPatch = JsonUtil.Obj(
-                    ("transitions", new JsonArray
-                    {
-                        JsonUtil.Obj(
-                            ("automation", JsonUtil.Obj(("mode", "click"))),
-                            ("id", "transition.a.open.to.b"))
-                    })
-                );
-                JsonObject noOp = UiNavMapPatchTools.MergePatch(JsonUtil.Obj(
-                    ("mapPath", mapPath),
-                    ("patch", noOpPatch)
-                ));
-                AssertFalse(Boolean(noOp, "writePerformed"), "No-op transition patch rewrote the map.");
-                AssertEqual(finalizedBytes, File.ReadAllText(mapPath), "No-op transition patch changed file bytes.");
-            });
+                finally { Console.SetOut(original); }
+            }
         }
 
         private static void TestCodexMcpInstall()
@@ -523,190 +433,37 @@ namespace UnityAutorun.Mcp.Tests
                 "MCP server command was not installed correctly.");
         }
 
-        private static JsonObject TraceCandidate(
-            string mapPath,
-            params string[] knownViews)
-        {
-            var names = new JsonArray();
-            foreach (string view in knownViews)
-            {
-                names.Add(view);
-            }
-
-            JsonObject result = UiNavMapSourceScanner.TraceNavigationCalls(JsonUtil.Obj(
-                ("mapPath", mapPath),
-                ("query", ""),
-                ("offset", 0),
-                ("limit", 10),
-                ("knownViewNames", names)
-            ));
-            JsonArray items = result["items"].AsArray();
-            AssertEqual(1, items.Count, "Expected exactly one navigation candidate.");
-            return items[0].AsObject();
-        }
-
-        private static JsonObject Finalize(string mapPath, params string[] knownViews)
-        {
-            var names = new JsonArray();
-            foreach (string view in knownViews)
-            {
-                names.Add(view);
-            }
-
-            return UiNavMapSourceScanner.FinalizeGeneration(JsonUtil.Obj(
-                ("mapPath", mapPath),
-                ("limit", 20),
-                ("knownViewNames", names)
-            ));
-        }
-
-        private static string CandidateSource(string targetView, int leadingBlankLines)
-        {
-            return new string('\n', leadingBlankLines)
-                + "public sealed class UIFormA\n"
-                + "{\n"
-                + "    private ExButton OpenExButton;\n"
-                + "    public void Bind()\n"
-                + "    {\n"
-                + "        OpenExButton.Set(OnOpen);\n"
-                + "    }\n"
-                + "\n"
-                + "    private void OnOpen()\n"
-                + "    {\n"
-                + "        OpenUIForm(" + targetView + ");\n"
-                + "    }\n"
-                + "}\n";
-        }
-
-        private static JsonObject EmptyMap()
-        {
-            return JsonUtil.Obj(
-                ("views", new JsonArray()),
-                ("controls", new JsonArray()),
-                ("transitions", new JsonArray()),
-                ("routes", new JsonArray()),
-                ("unresolved", new JsonArray()),
-                ("candidateDecisions", new JsonArray()));
-        }
-
-        private static void WithTemporaryToolRoot(Action<string, string> action)
+        private static void WithUnityProject(Action<string> action)
         {
             WithTemporaryDirectory(root =>
             {
-                string assetsRoot = Path.Combine(root, "Assets");
-                string projectSettingsRoot = Path.Combine(root, "ProjectSettings");
-                string toolRoot = Path.Combine(
-                    root,
-                    "Library",
-                    "PackageCache",
-                    "com.shthemw.unity-autorun-tool@test");
-                Directory.CreateDirectory(assetsRoot);
-                Directory.CreateDirectory(projectSettingsRoot);
-                Directory.CreateDirectory(Path.Combine(toolRoot, "Example"));
-                Directory.CreateDirectory(Path.Combine(toolRoot, "mcp~"));
-                string oldProjectRoot = Environment.GetEnvironmentVariable(
-                    "UNITY_AUTORUN_PROJECT_ROOT");
-                string oldToolRoot = Environment.GetEnvironmentVariable(
-                    "UNITY_AUTORUN_TOOL_ROOT");
-                string oldMapPath = Environment.GetEnvironmentVariable(
-                    "UNITY_AUTORUN_NAV_MAP");
+                Directory.CreateDirectory(Path.Combine(root, "Assets"));
+                Directory.CreateDirectory(Path.Combine(root, "ProjectSettings"));
+                string previous = Environment.GetEnvironmentVariable("UNITY_AUTORUN_PROJECT_ROOT");
                 try
                 {
-                    Environment.SetEnvironmentVariable(
-                        "UNITY_AUTORUN_PROJECT_ROOT",
-                        root);
-                    Environment.SetEnvironmentVariable(
-                        "UNITY_AUTORUN_TOOL_ROOT",
-                        toolRoot);
-                    Environment.SetEnvironmentVariable(
-                        "UNITY_AUTORUN_NAV_MAP",
-                        null);
-                    action(
-                        toolRoot,
-                        Path.GetFullPath(Path.Combine(root, UiNavMapPaths.DefaultRelativePath)));
+                    Environment.SetEnvironmentVariable("UNITY_AUTORUN_PROJECT_ROOT", root);
+                    action(root);
                 }
-                finally
-                {
-                    Environment.SetEnvironmentVariable(
-                        "UNITY_AUTORUN_PROJECT_ROOT",
-                        oldProjectRoot);
-                    Environment.SetEnvironmentVariable(
-                        "UNITY_AUTORUN_TOOL_ROOT",
-                        oldToolRoot);
-                    Environment.SetEnvironmentVariable(
-                        "UNITY_AUTORUN_NAV_MAP",
-                        oldMapPath);
-                }
+                finally { Environment.SetEnvironmentVariable("UNITY_AUTORUN_PROJECT_ROOT", previous); }
             });
         }
-
         private static void WithTemporaryDirectory(Action<string> action)
         {
-            string root = Path.Combine(
-                Path.GetTempPath(),
-                "unity-autorun-tests-" + Guid.NewGuid().ToString("N"));
+            string root = Path.Combine(Path.GetTempPath(), "unity-autorun-tests-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(root);
-            try
-            {
-                action(root);
-            }
-            finally
-            {
-                if (Directory.Exists(root))
-                {
-                    Directory.Delete(root, true);
-                }
-            }
+            try { action(root); }
+            finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
         }
-
-        private static string FindAssetsRoot()
-        {
-            return Path.Combine(UiNavMapPaths.ResolveProjectRootDirectory(), "Assets");
-        }
-
-        private static JsonObject ParseObject(string json)
-        {
-            return JsonNode.Parse(json).AsObject();
-        }
-
-        private static bool Boolean(JsonObject value, string key)
-        {
-            return value?[key]?.GetValue<bool>() == true;
-        }
-
-        private static string Text(JsonObject value, string key)
-        {
-            return value?[key]?.GetValue<string>();
-        }
-
-        private static void AssertTrue(bool condition, string message)
-        {
-            if (!condition)
-            {
-                throw new InvalidOperationException(message);
-            }
-        }
-
-        private static void AssertFalse(bool condition, string message)
-        {
-            AssertTrue(!condition, message);
-        }
-
+        private static JsonObject ParseObject(string json) { return JsonNode.Parse(json).AsObject(); }
+        private static bool Boolean(JsonObject value, string key) { return value?[key]?.GetValue<bool>() == true; }
+        private static string Text(JsonObject value, string key) { return value?[key]?.GetValue<string>(); }
+        private static void AssertTrue(bool condition, string message) { if (!condition) throw new InvalidOperationException(message); }
+        private static void AssertFalse(bool condition, string message) { AssertTrue(!condition, message); }
         private static void AssertEqual<T>(T expected, T actual, string message)
         {
             if (!EqualityComparer<T>.Default.Equals(expected, actual))
-            {
-                throw new InvalidOperationException(
-                    message + " Expected=" + expected + ", actual=" + actual + ".");
-            }
-        }
-
-        private static void AssertNotEqual<T>(T left, T right, string message)
-        {
-            if (EqualityComparer<T>.Default.Equals(left, right))
-            {
-                throw new InvalidOperationException(message + " Value=" + left + ".");
-            }
+                throw new InvalidOperationException(message + " Expected=" + expected + ", actual=" + actual + ".");
         }
     }
 }

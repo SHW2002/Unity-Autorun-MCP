@@ -58,11 +58,6 @@ public sealed partial class AutoRunBridgeDispatcher
             PumpUiStateWait();
         }
 
-        if (_navigationJob != null)
-        {
-            PumpNavigation();
-        }
-
         if (_sequenceJob != null)
         {
             PumpSequence();
@@ -131,17 +126,19 @@ public sealed partial class AutoRunBridgeDispatcher
             case "run_sequence":
                 shouldComplete = StartSequence(job);
                 return job.Response;
-            case "navigate_route":
-                shouldComplete = StartNavigation(job);
-                return job.Response;
-            case "cancel_navigation":
-                return CancelNavigation(request);
-            case "start_ui_navigation":
-                return StartTrackedNavigation(request);
-            case "get_ui_navigation_status":
-                return GetTrackedNavigationStatus(request);
-            case "cancel_ui_navigation":
-                return CancelTrackedNavigation(request);
+            case "list_scripts":
+                return ListScripts(request);
+            case "get_script":
+                return GetScript(request);
+            case "refresh_scripts":
+                AutoRunCompilationMonitor.RequestRefresh();
+                return AutoRunBridgeResponses.Success(request.id, "Script refresh requested; poll unity_status and list_scripts to confirm compilation.");
+            case "start_script":
+                return StartScript(request);
+            case "get_script_status":
+                return GetScriptStatus(request);
+            case "cancel_script":
+                return CancelScript(request);
             default:
                 return AutoRunBridgeResponses.Fail(request.id, "unknown_command", $"Unknown command: {request.command}");
         }
@@ -217,18 +214,6 @@ public sealed partial class AutoRunBridgeDispatcher
             return AutoRunBridgeResponses.Fail(request.id, "view_required", "targetViewId or query is required.");
         }
 
-        if (!string.IsNullOrEmpty(payload.targetViewId))
-        {
-            try
-            {
-                query = NavigationAutoRunMap.LoadDefault().ResolveViewRuntimeToken(payload.targetViewId);
-            }
-            catch (Exception)
-            {
-                // Keep arbitrary runtime names usable when the navigation map is unavailable.
-            }
-        }
-
         int total;
         List<string> matches = AutoRunViewService.ListOpenViewMatches(query, 10, out total);
         return AutoRunBridgeResponses.Success(request.id, total > 0 ? "UI view is open." : "UI view is not open.", new AutoRunBridgeData
@@ -287,34 +272,14 @@ public sealed partial class AutoRunBridgeDispatcher
         response.data.isPlaying = EditorApplication.isPlaying;
         response.data.unityVersion = Application.unityVersion;
         response.data.bridgeVersion = AutoRunBridgeServer.Version;
+        response.data.isCompiling = AutoRunCompilationMonitor.IsCompiling;
+        response.data.compilerMessages = AutoRunCompilationMonitor.Messages;
     }
 
     private static TimeSpan GetRequestTimeout(AutoRunBridgeRequest request)
     {
         const double defaultSeconds = 30;
         const double maximumSeconds = 300;
-        if (request?.command == "navigate_route")
-        {
-            double nominalStepSeconds = 0;
-            foreach (AutoRunNavStep step in request.payload?.navigationSteps ?? new List<AutoRunNavStep>())
-            {
-                nominalStepSeconds +=
-                    step != null && step.timeout > 0
-                        ? step.timeout
-                        : 15;
-            }
-
-            // A route can revisit an earlier repeated-control step while it
-            // explores virtualized pages and conditional branches. Its bridge
-            // lifetime therefore must outlive the sum of the nominal step
-            // timeouts instead of expiring during a valid backtrack.
-            double seconds = 30 + nominalStepSeconds * 8;
-            return TimeSpan.FromSeconds(
-                Math.Max(
-                    defaultSeconds,
-                    Math.Min(maximumSeconds, seconds)));
-        }
-
         if (request?.command == "run_sequence")
         {
             int count = request.payload?.actions?.Count ?? 0;

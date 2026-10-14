@@ -11,6 +11,7 @@
     <ProjectReference Include="..\UnityAutorun.Mcp\UnityAutorun.Mcp.csproj" />
     <Compile Include="..\..\Editor\McpInstall\JsonObjectUpdater.cs" Link="src\EditorInstall\JsonObjectUpdater.cs" />
     <Compile Include="..\..\Editor\McpInstall\McpInstallService.cs" Link="src\EditorInstall\McpInstallService.cs" />
+    <Compile Include="..\..\Scripting\**\*.cs" Link="src\ScriptRuntime\%(RecursiveDir)%(Filename)%(Extension)" />
   </ItemGroup>
 
   <PropertyGroup>
@@ -18,11 +19,14 @@
     <ArchivePlatform Condition="'$(RuntimeIdentifier)' == '' and $([MSBuild]::IsOSPlatform('OSX'))">mac</ArchivePlatform>
     <ArchivePlatform Condition="'$(RuntimeIdentifier)' == '' and $([MSBuild]::IsOSPlatform('Linux'))">linux</ArchivePlatform>
     <ArchivePlatform Condition="'$(RuntimeIdentifier)' == '' and '$(ArchivePlatform)' == ''">unknown</ArchivePlatform>
+    <ArchivePlatform Condition="$([System.String]::Copy('$(RuntimeIdentifier)').StartsWith('win'))">win</ArchivePlatform>
+    <ArchivePlatform Condition="$([System.String]::Copy('$(RuntimeIdentifier)').StartsWith('osx'))">mac</ArchivePlatform>
+    <ArchivePlatform Condition="$([System.String]::Copy('$(RuntimeIdentifier)').StartsWith('linux'))">linux</ArchivePlatform>
     <ArchiveType Condition="'$(SelfContained)' == 'true'">self-contained</ArchiveType>
     <ArchiveType Condition="'$(SelfContained)' != 'true'">portable</ArchiveType>
   </PropertyGroup>
 
-  <Target Name="ArchivePublishOutput" AfterTargets="Publish" Condition="'$(Configuration)' == 'Release'">
+  <Target Name="ArchivePublishOutput" AfterTargets="Publish">
     <PropertyGroup>
       <ArchiveTimestamp>$([System.DateTime]::Now.ToString('yyMMdd-HHmmss'))</ArchiveTimestamp>
       <ArchiveName>UnityAutorun.Mcp.Tests-$(ArchivePlatform)-$(ArchiveType)-$(ArchiveTimestamp)</ArchiveName>

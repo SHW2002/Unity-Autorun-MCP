@@ -10,9 +10,9 @@ public sealed partial class AutoRunBridgeDispatcher
     private bool StartSequence(AutoRunBridgeJob job)
     {
         AutoRunBridgeRequest request = job.Request;
-        if (_sequenceJob != null || _navigationJob != null)
+        if (_sequenceJob != null || UnityAutorun.Scripting.AutoRunScriptService.HasActiveRun)
         {
-            job.Response = AutoRunBridgeResponses.Fail(request.id, "sequence_busy", "Another sequence or navigation request is still running.");
+            job.Response = AutoRunBridgeResponses.Fail(request.id, "sequence_busy", "Another sequence or script is still running.");
             return true;
         }
 

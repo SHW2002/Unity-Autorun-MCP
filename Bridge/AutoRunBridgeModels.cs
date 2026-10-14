@@ -20,21 +20,24 @@ public sealed class AutoRunBridgePayload
     public string property;
     public string comparison;
     public string expected;
-    public string navigationId;
     public string targetViewId;
-    public string routeId;
+    public string scriptId;
+    public string runId;
+    public string kind;
+    public string parametersJson;
+    public bool includeSource = true;
+    public double timeoutSeconds = 120;
     public bool exact;
     public bool namesOnly;
     public bool includeInactive;
     public bool includeSensitive;
-    public bool ensurePlayMode = true;
+    public bool ensurePlayMode;
     public int limit = 100;
     public int timeoutMilliseconds = 10000;
     public int waitMilliseconds;
     public int pollMilliseconds;
     public List<string> types = new();
     public List<AutoRunParam> actions = new();
-    public List<AutoRunNavStep> navigationSteps = new();
 }
 
 [Serializable]
@@ -69,28 +72,55 @@ public sealed class AutoRunBridgeData
     public string uiStateComparison;
     public string uiStateExpected;
     public string uiStateActual;
-    public string navigationId;
-    public string navigationStatus;
-    public string navigationPhase;
-    public string targetViewId;
-    public string routeId;
-    public string resultCode;
-    public string resultMessage;
+    public bool isCompiling;
+    public List<string> compilerMessages = new();
+    public List<AutoRunBridgeScriptInfo> scripts = new();
+    public AutoRunBridgeScriptInfo script;
+    public AutoRunBridgeScriptRun scriptRun;
+    public List<string> catalogErrors = new();
     public bool terminal;
     public long elapsedMilliseconds;
 }
 
 [Serializable]
-public sealed class AutoRunNavStep
+public sealed class AutoRunBridgeScriptInfo
 {
-    public string transitionId;
-    public string controlId;
-    public string fromViewId;
-    public string toViewId;
+    public string id;
+    public string name;
     public string kind;
-    public string mode;
-    public bool isAutoRunnable;
-    public AutoRunParam action;
-    public string waitForViewId;
-    public float timeout = 15f;
+    public string description;
+    public string preconditions;
+    public string[] dependencies;
+    public string sourcePath;
+    public string source;
+    public string validationError;
+}
+
+[Serializable]
+public sealed class AutoRunBridgeScriptRun
+{
+    public string runId;
+    public string scriptId;
+    public string state;
+    public string code;
+    public string message;
+    public double startedAt;
+    public double completedAt;
+    public bool terminal;
+    public long elapsedMilliseconds;
+    public List<string> callStack;
+    public List<string> logs;
+    public List<string> artifacts;
+    public List<AutoRunBridgeScriptCall> calls;
+}
+
+[Serializable]
+public sealed class AutoRunBridgeScriptCall
+{
+    public string scriptId;
+    public string parentScriptId;
+    public int depth;
+    public string state;
+    public string code;
+    public string message;
 }

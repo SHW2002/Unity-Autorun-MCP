@@ -63,11 +63,11 @@ public partial class AutoRunWindow
             }
         }
 
-        installActions.Add(105f);
+        installActions.Add(120f);
         RenderSkillInstallButton();
         installActions.End();
         GUILayout.Label(
-            "Select .codex or a project .claude folder for MCP + Skill; a Claude Desktop config folder supports MCP only.",
+            "Select .codex or a project .claude folder for MCP + Skills; a Claude Desktop config folder supports MCP only.",
             GetWrappedStyle(EditorStyles.label),
             GUILayout.MinWidth(0),
             GUILayout.ExpandWidth(true)
@@ -134,24 +134,9 @@ public partial class AutoRunWindow
             }
         }
 
-        row.Add(130f);
-        if (GUILayout.Button("Preview Nav Map", GUILayout.Width(130)))
-        {
-            string message;
-            if (McpNavMapPreviewService.OpenPreview(out message))
-            {
-                AppendConsoleText(message);
-            }
-            else
-            {
-                AppendConsoleText(message, AutoRunLogLevel.Error);
-                EditorUtility.DisplayDialog("Preview Nav Map Failed", message, "OK");
-            }
-        }
-
         row.Add(260f);
         GUILayout.Label(
-            "Publish the MCP server, open its root folder, or render the project navigation map as an HTML graph.",
+            "Publish the MCP server or open its root folder.",
             GetWrappedStyle(EditorStyles.label),
             GUILayout.MinWidth(0),
             GUILayout.ExpandWidth(true)
@@ -188,7 +173,7 @@ public partial class AutoRunWindow
         header.Add(170f);
         GUILayout.Label(
             new GUIContent(
-                "Unity AutoRun MCP + Skill",
+                "Unity AutoRun MCP + Skills",
                 "The package version is read from package.json."),
             EditorStyles.miniLabel,
             GUILayout.MinWidth(0),

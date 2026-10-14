@@ -175,7 +175,7 @@ namespace UnityAutorun.Mcp
 
         private static string ResolveProjectRoot()
         {
-            return UiNavMapPaths.ResolveProjectRootDirectory();
+            return ProjectPaths.ResolveProjectRootDirectory();
         }
     }
 

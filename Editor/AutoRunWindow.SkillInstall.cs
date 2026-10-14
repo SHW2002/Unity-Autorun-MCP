@@ -1,102 +1,58 @@
 using System;
+using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
 
 public partial class AutoRunWindow
 {
     private const double SkillStatusRefreshIntervalSeconds = 2d;
-
-    private SkillInstallStatus _skillInstallStatus;
+    private List<SkillInstallStatus> _skillInstallStatuses;
     private string _skillInstallStatusTarget = "";
     private double _skillInstallStatusRefreshedAt = -1d;
 
     private void RenderSkillInstallButton()
     {
-        SkillInstallStatus status = GetSkillInstallStatus();
-        string label;
-        if (!status.IsInstalled)
+        List<SkillInstallStatus> statuses = GetSkillInstallStatuses();
+        bool valid = statuses.TrueForAll(status => status.IsTargetValid && status.BundledVersion != "unknown");
+        bool newer = statuses.Exists(status => status.IsInstalledNewer);
+        bool current = statuses.TrueForAll(status => status.IsCurrent);
+        bool installed = statuses.Exists(status => status.IsInstalled);
+        string label = newer ? "Skills Newer" : current ? "Reinstall Skills" : installed ? "Update Skills" : "Install Skills";
+        string tooltip = newer ? "An installed Skill is newer than this bundle. Update the Unity package first."
+            : "Install gen-script and run-script as one batch. A failed install restores previous versions.";
+        using (new EditorGUI.DisabledScope(!valid || newer))
         {
-            label = "Install Skill";
+            if (!GUILayout.Button(new GUIContent(label, tooltip), GUILayout.Width(120))) return;
         }
-        else if (status.IsInstalledNewer)
-        {
-            label = "Skill Newer";
-        }
-        else if (status.IsCurrent)
-        {
-            label = "Reinstall Skill";
-        }
-        else if (status.IsUpdateAvailable)
-        {
-            label = "Update Skill";
-        }
-        else
-        {
-            label = "Repair Skill";
-        }
-
-        string tooltip;
-        if (status.IsInstalledNewer)
-        {
-            tooltip = "Installed v"
-                + status.InstalledVersion
-                + " is newer than bundled v"
-                + status.BundledVersion
-                + ". Update the Unity package before reinstalling.";
-        }
-        else
-        {
-            tooltip = status.IsTargetValid
-                ? "Copy the bundled Unity Autorun Skill to " + status.InstallDirectory
-                : status.Error;
-        }
-        using (new EditorGUI.DisabledScope(
-            !status.IsTargetValid || status.IsInstalledNewer))
-        {
-            if (!GUILayout.Button(
-                    new GUIContent(label, tooltip),
-                    GUILayout.Width(105)))
-            {
-                return;
-            }
-        }
-
         string message;
         if (SkillInstallService.Install(_mcpInstallTargetPath, out message))
         {
             InvalidateSkillInstallStatus();
             AppendConsoleText(message);
-            EditorUtility.DisplayDialog("Skill Install", message, "OK");
+            EditorUtility.DisplayDialog("Skills Install", message, "OK");
         }
         else
         {
             AppendConsoleText(message, AutoRunLogLevel.Error);
-            EditorUtility.DisplayDialog("Skill Install Failed", message, "OK");
+            EditorUtility.DisplayDialog("Skills Install Failed", message, "OK");
         }
     }
 
-    private SkillInstallStatus GetSkillInstallStatus()
+    private List<SkillInstallStatus> GetSkillInstallStatuses()
     {
         string target = _mcpInstallTargetPath ?? "";
-        if (_skillInstallStatus == null
-            || !string.Equals(
-                target,
-                _skillInstallStatusTarget,
-                StringComparison.OrdinalIgnoreCase)
-            || EditorApplication.timeSinceStartup - _skillInstallStatusRefreshedAt
-                >= SkillStatusRefreshIntervalSeconds)
+        if (_skillInstallStatuses == null || !string.Equals(target, _skillInstallStatusTarget, StringComparison.OrdinalIgnoreCase)
+            || EditorApplication.timeSinceStartup - _skillInstallStatusRefreshedAt >= SkillStatusRefreshIntervalSeconds)
         {
-            _skillInstallStatus = SkillInstallService.GetStatus(target);
+            _skillInstallStatuses = SkillInstallService.GetStatuses(target);
             _skillInstallStatusTarget = target;
             _skillInstallStatusRefreshedAt = EditorApplication.timeSinceStartup;
         }
-
-        return _skillInstallStatus;
+        return _skillInstallStatuses;
     }
-
     private void InvalidateSkillInstallStatus()
     {
-        _skillInstallStatus = null;
+        _skillInstallStatuses = null;
         _skillInstallStatusTarget = "";
         _skillInstallStatusRefreshedAt = -1d;
     }

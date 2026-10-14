@@ -1,0 +1,9 @@
+interface:
+  display_name: "Generate Unity Script"
+  short_description: "Generate and self-test Unity C# automation scripts"
+  default_prompt: "Use $gen-script to generate and self-test a reusable Unity Autorun script for this flow."
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "unity-autorun"
+      description: "Unity Autorun script generation, compilation and execution tools"

@@ -1,7 +1,9 @@
 {
   "name": "UnityAutorunTool.Editor",
   "rootNamespace": "",
-  "references": [],
+  "references": [
+    "UnityEngine.UI"
+  ],
   "includePlatforms": [
     "Editor"
   ],

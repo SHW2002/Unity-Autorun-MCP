@@ -35,7 +35,7 @@ public static class AutoRunButtonService
             : ClickUGUI(param, matchIndex);
     }
 
-    public static AutoRunButtonResult ClickForNavigation(
+    public static AutoRunButtonResult ClickWithPointer(
         AutoRunParam param,
         int matchIndex)
     {
@@ -43,7 +43,7 @@ public static class AutoRunButtonService
         {
             return AutoRunButtonResult.Fail(
                 "button_action_required",
-                "err: navigation click action is required.");
+                "err: click action is required.");
         }
 
         if (param.isFairyGUI)
