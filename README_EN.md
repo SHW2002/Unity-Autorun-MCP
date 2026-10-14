@@ -95,7 +95,7 @@ Supported yields are null, nested `IEnumerator`, `context.Wait`, `context.WaitUn
 
 Declare every `context.Call` target in the attribute's `Dependencies`. Missing dependencies, duplicate IDs, cycles, and undeclared calls fail. `OnExit` releases subscriptions and temporary objects owned by the script without resetting the scene or stopping Play Mode.
 
-A running C# iterator cannot be restored across Domain Reload. Initial startup is a `start_script` preparation phase; do not directly toggle Play Mode or trigger recompilation from a business iterator. Unexpected reload terminates the run with a retained failure rather than replaying completed actions.
+`start_script(ensurePlayMode=true)` saves the initial preparation request while no actions have executed, so it can continue across the Domain Reload caused by entering Play Mode. After preparation, it checks the declared starting state and runs the business script once. An already running C# iterator cannot be restored across Domain Reload; do not directly toggle Play Mode or trigger recompilation from a business iterator. Unexpected reload during execution retains a terminal failure rather than replaying completed actions.
 
 | Built-in ID | Purpose | Common parameters (string values) |
 | --- | --- | --- |
@@ -112,7 +112,18 @@ Screenshots default to the host project's `AutorunToolData/Screenshots/`. uGUI r
 
 Script tools are `get_script_guidance`, `list_scripts`, `get_script`, `create_script`, `refresh_scripts`, `start_script`, `get_script_status`, and `cancel_script`. Use live schemas. Bridge endpoints are discovered dynamically through the host project's `Library`; diagnostic port discovery is usually unnecessary.
 
+The optional `UNITY_AUTORUN_BRIDGE_PROFILE` environment variable isolates endpoint discovery for a Bridge instance:
+
+| Setting | Endpoint file relative to the host project root |
+| --- | --- |
+| Unset or empty string | `Library/UnityAutorunTool/bridge-endpoint.json` |
+| Simple name such as `preview` | `Library/UnityAutorunTool/profiles/preview/bridge-endpoint.json` |
+
+A profile is 1–64 ASCII letters, digits, hyphens, or underscores; whitespace and directory paths are rejected. Configure the same profile for Unity before the Bridge's first initialization and for the MCP process. Unity stores the first profile used in this Editor session, including an empty value, in `SessionState` separately for each Bridge assembly. It remains unchanged across Domain Reload, so later environment changes do not redirect that assembly's Bridge publication or cleanup. An invalid profile, or a missing or stale endpoint for the selected profile, returns an error without falling back to the default or an older instance's endpoint.
+
 `create_script.path` is relative to `Assets/AutorunScripts/Editor/` and existing files are never overwritten. After `refresh_scripts`, wait for `unity_status.isCompiling=false`, inspect `compilerMessages`, and check registration errors before execution.
+
+Asset refresh, script-service initialization, and Bridge restoration after reload are scheduled on the main thread through `EditorApplication.update`. An unfocused Editor does not need an Inspector update to trigger `delayCall`. Refresh requests return before the subsequent Editor update handles them; wait for compilation and asset import to finish before inspecting the actual result.
 
 `start_script` takes `scriptId`, string-valued `parameters` or `parametersJson` (choose one), `timeoutSeconds`, `ensurePlayMode`, and optional `runId`. Transport retries of one execution reuse its ID; conflicting retries are rejected. Intentional new runs and self-tests after repair use new IDs because an old ID returns the retained result. `get_script_status.data.scriptRun` contains state, code, message, call stack, logs, and artifacts, including on failure. A preliminary observation of a wrong start can be reported without execution; do not claim a runner-generated failure when no run was started.
 

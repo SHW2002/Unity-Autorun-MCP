@@ -4,6 +4,7 @@ using UnityEditor;
 public static class AutoRunBridgeController
 {
     private const string BridgeEnabledKey = "UnityAutorunTool.BridgeEnabled";
+    private const string BridgePortKey = "UnityAutorunTool.BridgePort";
     private static readonly AutoRunBridgeServer Server = new();
 
     public static bool IsEnabled => SessionState.GetBool(BridgeEnabledKey, false);
@@ -13,14 +14,15 @@ public static class AutoRunBridgeController
 
     static AutoRunBridgeController()
     {
-        EditorApplication.delayCall += RestoreBridgeIfNeeded;
+        EditorApplication.update += RestoreBridgeOnNextUpdate;
         AssemblyReloadEvents.beforeAssemblyReload += StopBeforeAssemblyReload;
     }
 
     public static void Start()
     {
         SessionState.SetBool(BridgeEnabledKey, true);
-        Server.Start();
+        Server.Start(SessionState.GetInt(BridgePortKey, AutoRunBridgeServer.DefaultPort));
+        SessionState.SetInt(BridgePortKey, Server.Port);
     }
 
     public static AutoRunBridgeResponse Enqueue(string requestJson)
@@ -38,8 +40,15 @@ public static class AutoRunBridgeController
     {
         if (IsEnabled)
         {
-            Server.Start();
+            Start();
         }
+    }
+
+    private static void RestoreBridgeOnNextUpdate()
+    {
+        if (EditorApplication.isCompiling || EditorApplication.isUpdating) return;
+        EditorApplication.update -= RestoreBridgeOnNextUpdate;
+        RestoreBridgeIfNeeded();
     }
 
     private static void StopBeforeAssemblyReload()

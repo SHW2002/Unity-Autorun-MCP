@@ -81,8 +81,15 @@ namespace UnityAutorun.Scripting
         public AutoRunScriptOperationResult StopPlayMode()
         {
             // Finish the calling basic script and persist its terminal status before Unity exits Play Mode.
-            EditorApplication.delayCall += () => EditorApplication.isPlaying = false;
+            EditorApplication.update -= StopOnNextUpdate;
+            EditorApplication.update += StopOnNextUpdate;
             return AutoRunScriptOperationResult.Success("Stop Play Mode explicitly requested by this script.");
+        }
+
+        private static void StopOnNextUpdate()
+        {
+            EditorApplication.update -= StopOnNextUpdate;
+            EditorApplication.isPlaying = false;
         }
     }
 }

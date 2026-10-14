@@ -10,6 +10,7 @@ namespace UnityAutorun.Mcp
     {
         private const string StateDirectoryName = "UnityAutorunTool";
         private const string StateFileName = "bridge-endpoint.json";
+        public const string ProfileEnvironmentVariable = "UNITY_AUTORUN_BRIDGE_PROFILE";
 
         public BridgeEndpoint GetRequired()
         {
@@ -95,6 +96,7 @@ namespace UnityAutorun.Mcp
                         ("url", endpoint.Url),
                         ("processId", endpoint.ProcessId),
                         ("projectRoot", endpoint.ProjectRoot),
+                        ("stateFilePath", endpoint.StateFilePath),
                         ("updatedAtUtc", endpoint.UpdatedAtUtc)
                     ))
                 );
@@ -170,7 +172,25 @@ namespace UnityAutorun.Mcp
 
         private static string GetStateFilePath()
         {
-            return Path.Combine(ResolveProjectRoot(), "Library", StateDirectoryName, StateFileName);
+            string profile = ValidateProfile(Environment.GetEnvironmentVariable(ProfileEnvironmentVariable));
+            string directory = Path.Combine(ResolveProjectRoot(), "Library", StateDirectoryName);
+            return string.IsNullOrEmpty(profile)
+                ? Path.Combine(directory, StateFileName)
+                : Path.Combine(directory, "profiles", profile, StateFileName);
+        }
+
+        private static string ValidateProfile(string profile)
+        {
+            if (string.IsNullOrEmpty(profile)) return null;
+            if (profile.Length > 64)
+                throw new ArgumentException(ProfileEnvironmentVariable + " must contain 1-64 ASCII letters, digits, hyphens or underscores.");
+            foreach (char character in profile)
+            {
+                if (!((character >= 'a' && character <= 'z') || (character >= 'A' && character <= 'Z')
+                    || (character >= '0' && character <= '9') || character == '-' || character == '_'))
+                    throw new ArgumentException(ProfileEnvironmentVariable + " must be a simple name containing 1-64 ASCII letters, digits, hyphens or underscores; directories are not allowed.");
+            }
+            return profile;
         }
 
         private static string ResolveProjectRoot()

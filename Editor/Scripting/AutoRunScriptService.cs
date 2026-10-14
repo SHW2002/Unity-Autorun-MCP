@@ -23,7 +23,7 @@ namespace UnityAutorun.Scripting
 
         static AutoRunScriptService()
         {
-            EditorApplication.delayCall += Initialize;
+            EditorApplication.update += InitializeOnNextUpdate;
             EditorApplication.update += Pump;
             AssemblyReloadEvents.beforeAssemblyReload += BeforeAssemblyReload;
             EditorApplication.playModeStateChanged += OnPlayModeChanged;
@@ -39,6 +39,12 @@ namespace UnityAutorun.Scripting
         }
 
         private static void EnsureInitialized() { if (!_initialized) Initialize(); }
+        private static void InitializeOnNextUpdate()
+        {
+            if (EditorApplication.isCompiling || EditorApplication.isUpdating) return;
+            EditorApplication.update -= InitializeOnNextUpdate;
+            Initialize();
+        }
         private static void Initialize()
         {
             if (_initialized) return;

@@ -95,7 +95,7 @@ public sealed class CheckCurrentUi : AutoRunScript
 
 所有 `context.Call` 目标必须在 attribute 的 `Dependencies` 中声明。缺依赖、重复 ID、循环和未声明调用都会失败。`OnExit` 在退出时释放本脚本的事件订阅、临时对象等资源，不能隐式重置场景或停止游戏。
 
-正在运行的 C# 迭代器不能跨 Domain Reload 恢复。首次启动由 `start_script` 的准备阶段处理；不要在业务迭代器中直接切换 Play Mode 或触发重编译。意外重载会终止并保留失败结果，不会自动重放已完成的动作。
+`start_script(ensurePlayMode=true)` 在首次启动准备阶段保存尚未执行动作的请求，因此可以跨进入 Play Mode 时的 Domain Reload 继续，在准备完成后检查业务起点并执行一次脚本。已经开始运行的 C# 迭代器不能跨 Domain Reload 恢复；不要在业务迭代器中直接切换 Play Mode 或触发重编译。执行中的意外重载会终止并保留失败结果，不会自动重放已完成的动作。
 
 内置基础脚本：
 
@@ -114,7 +114,18 @@ public sealed class CheckCurrentUi : AutoRunScript
 
 脚本 MCP 工具为 `get_script_guidance`、`list_scripts`、`get_script`、`create_script`、`refresh_scripts`、`start_script`、`get_script_status`、`cancel_script`。工具读取与当前版本匹配的 schema，Bridge 端点通过宿主 Unity 项目的 `Library` 动态发现，通常无需手动获取端口。
 
+可选环境变量 `UNITY_AUTORUN_BRIDGE_PROFILE` 用于隔离 Bridge 实例的端点发现：
+
+| 设置 | 端点文件（相对宿主项目根目录） |
+| --- | --- |
+| 未设置或空字符串 | `Library/UnityAutorunTool/bridge-endpoint.json` |
+| 简单名称，例如 `preview` | `Library/UnityAutorunTool/profiles/preview/bridge-endpoint.json` |
+
+名称长度为 1–64，只允许 ASCII 字母、数字、连字符和下划线，不接受空白或目录路径。Unity 进程在 Bridge 首次初始化前与 MCP 进程应配置相同 profile；Unity 按桥程序集在 `SessionState` 中保存本 Editor 会话首次使用的 profile（包括空值），跨 Domain Reload 保持不变，之后更改进程环境不会重定向该程序集 Bridge 的发布或清理。非法 profile、所选 profile 的端点文件缺失或失效都会报告错误，不会回落到默认路径或旧实例端点。
+
 `create_script` 的 `path` 相对于 `Assets/AutorunScripts/Editor/`，不会覆盖已有文件。调用 `refresh_scripts` 后等待 `unity_status` 中 `isCompiling=false`，检查 `compilerMessages` 和注册错误，再执行脚本。
+
+资源刷新、脚本服务初始化与 Bridge 重载恢复通过 `EditorApplication.update` 安排到主线程执行，失焦时无需等待 Inspector 更新触发 `delayCall`。刷新请求先返回，再由后续编辑器更新处理；仍需等待编译和资源导入完成后读取实际结果。
 
 `start_script` 接受 `scriptId`、字符串键值对象 `parameters` 或 `parametersJson`（二选一）、`timeoutSeconds`、`ensurePlayMode` 和可选 `runId`。同一次运行的传输重试复用同一个 runId，冲突请求会被拒绝；每次有意重新运行或修正后自测都使用新 runId，旧 ID 只返回保留结果。`get_script_status` 的 `data.scriptRun` 提供最终状态、结果码、消息、调用栈、日志与产物；失败同样保留完整结果。运行前已观察到起点不符时可以直接报告证据，不能声称已有一次实际失败运行。
 

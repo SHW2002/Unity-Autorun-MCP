@@ -1,18 +1,42 @@
 using System;
 using System.IO;
 using System.Text;
+using UnityEditor;
 using UnityEngine;
 
 public static class AutoRunBridgeEndpointState
 {
     private const string StateDirectoryName = "UnityAutorunTool";
     private const string StateFileName = "bridge-endpoint.json";
+    public const string ProfileEnvironmentVariable = "UNITY_AUTORUN_BRIDGE_PROFILE";
+    private const string ProfileSessionKeyPrefix = "UnityAutorunTool.Bridge.Profile";
+    private static readonly string Profile;
+
+    static AutoRunBridgeEndpointState()
+    {
+        // SessionState survives domain reloads. Each bridge assembly keeps its own
+        // first profile for this editor session, including an explicitly empty one.
+        string sessionKey = ProfileSessionKeyPrefix + "." + typeof(AutoRunBridgeEndpointState).Assembly.GetName().Name;
+        if (SessionState.GetBool(sessionKey + ".Captured", false))
+        {
+            Profile = ValidateProfile(SessionState.GetString(sessionKey + ".Value", ""));
+        }
+        else
+        {
+            Profile = ValidateProfile(Environment.GetEnvironmentVariable(ProfileEnvironmentVariable));
+            SessionState.SetString(sessionKey + ".Value", Profile ?? "");
+            SessionState.SetBool(sessionKey + ".Captured", true);
+        }
+    }
 
     public static string StateFilePath
     {
         get
         {
-            return Path.Combine(GetProjectRootDirectory(), "Library", StateDirectoryName, StateFileName);
+            string directory = Path.Combine(GetProjectRootDirectory(), "Library", StateDirectoryName);
+            return string.IsNullOrEmpty(Profile)
+                ? Path.Combine(directory, StateFileName)
+                : Path.Combine(directory, "profiles", Profile, StateFileName);
         }
     }
 
@@ -85,6 +109,20 @@ public static class AutoRunBridgeEndpointState
         }
 
         return projectRoot.FullName;
+    }
+
+    private static string ValidateProfile(string profile)
+    {
+        if (string.IsNullOrEmpty(profile)) return null;
+        if (profile.Length > 64)
+            throw new ArgumentException(ProfileEnvironmentVariable + " must contain 1-64 ASCII letters, digits, hyphens or underscores.");
+        foreach (char character in profile)
+        {
+            if (!((character >= 'a' && character <= 'z') || (character >= 'A' && character <= 'Z')
+                || (character >= '0' && character <= '9') || character == '-' || character == '_'))
+                throw new ArgumentException(ProfileEnvironmentVariable + " must be a simple name containing 1-64 ASCII letters, digits, hyphens or underscores; directories are not allowed.");
+        }
+        return profile;
     }
 
     [Serializable]

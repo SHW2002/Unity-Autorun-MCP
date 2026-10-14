@@ -9,15 +9,7 @@ public sealed class McpInstallConfig
 {
     public const string PackageName = "com.shthemw.unity-autorun-tool";
     public const string ServerName = "unity-autorun";
-    public const string NavigationMapRelativePath =
-        "ProjectSettings/Packages/com.shthemw.unity-autorun-tool/ui-nav-map.json";
-    public const string ExampleNavigationMapRelativePath =
-        "Example/ui-nav-map.example.json";
-    public const string NavigationPreviewRelativePath =
-        "Library/UnityAutorunTool/ui-nav-map.preview.html";
-
     private const string PackageFileName = "package.json";
-    private const string NavMapEnvironmentVariable = "UNITY_AUTORUN_NAV_MAP";
     private static string _toolVersion;
     private static string _mcpSourceVersion;
     private static string _mcpProjectPath;
@@ -151,57 +143,6 @@ public sealed class McpInstallConfig
         }
 
         return projectRoot.FullName;
-    }
-
-    public static string GetNavigationMapPath()
-    {
-        string configured = Environment.GetEnvironmentVariable(NavMapEnvironmentVariable);
-        if (string.IsNullOrWhiteSpace(configured))
-        {
-            return Path.GetFullPath(Path.Combine(
-                GetProjectRootDirectory(),
-                NavigationMapRelativePath));
-        }
-
-        return Path.IsPathRooted(configured)
-            ? Path.GetFullPath(configured)
-            : Path.GetFullPath(Path.Combine(GetProjectRootDirectory(), configured));
-    }
-
-    public static string GetExampleNavigationMapPath()
-    {
-        return Path.GetFullPath(Path.Combine(
-            GetToolRootDirectory(),
-            ExampleNavigationMapRelativePath));
-    }
-
-    public static string ResolveNavigationMapPath()
-    {
-        string mapPath = GetNavigationMapPath();
-        if (File.Exists(mapPath))
-        {
-            return mapPath;
-        }
-
-        string examplePath = GetExampleNavigationMapPath();
-        if (File.Exists(examplePath))
-        {
-            return examplePath;
-        }
-
-        throw new FileNotFoundException(
-            "Cannot find the project navigation map at "
-            + NavigationMapRelativePath
-            + " or the package example at "
-            + ExampleNavigationMapRelativePath
-            + ".");
-    }
-
-    public static string GetNavigationPreviewPath()
-    {
-        return Path.GetFullPath(Path.Combine(
-            GetProjectRootDirectory(),
-            NavigationPreviewRelativePath));
     }
 
     public static string GetPublishedDllPath()

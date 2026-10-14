@@ -17,6 +17,9 @@ namespace UnityAutorun.Mcp.Tests
             ("script creation never replaces existing bytes", TestCreationOnlyScript),
             ("script creation rejects traversal and non-C# paths", TestScriptPathBoundary),
             ("project roots resolve from nested client workspaces", TestProjectRootResolution),
+            ("default bridge endpoint path remains compatible", TestDefaultBridgeEndpoint),
+            ("bridge profiles isolate publishing lookup and cleanup", TestIsolatedBridgeEndpoint),
+            ("invalid bridge profiles fail without touching endpoints", TestInvalidBridgeProfile),
             ("script source reads stay inside generated directory", TestSourceBoundary),
             ("start_script normalizes parameters and preserves retry IDs", TestScriptRequests),
             ("status polling preserves terminal failure detail", TestStatusPolling),
@@ -129,6 +132,76 @@ namespace UnityAutorun.Mcp.Tests
                 AssertFalse(rejected["data"]["script"].AsObject().ContainsKey("source"), "Source reading escaped the script directory.");
                 AssertTrue(rejected["data"]["script"].AsObject().ContainsKey("sourceError"), "Rejected source path was not diagnosed.");
             });
+        }
+
+        private static void TestDefaultBridgeEndpoint()
+        {
+            WithUnityProject(root => WithBridgeProfile(null, () =>
+            {
+                string expected = Path.Combine(root, "Library", "UnityAutorunTool", "bridge-endpoint.json");
+                BridgeEndpointProvider.PublishForCurrentProcess("127.0.0.1", 17331);
+                BridgeEndpoint endpoint = new BridgeEndpointProvider().GetRequired();
+                AssertEqual(expected, endpoint.StateFilePath, "Default endpoint path changed.");
+                AssertEqual(17331, endpoint.Port, "Default endpoint could not be resolved.");
+                WithBridgeProfile("", () => AssertEqual(expected, new BridgeEndpointProvider().GetRequired().StateFilePath,
+                    "Empty profile did not preserve the default endpoint path."));
+                BridgeEndpointProvider.ClearForCurrentProcess();
+                AssertFalse(File.Exists(expected), "Default endpoint was not cleaned up.");
+            }));
+        }
+
+        private static void TestIsolatedBridgeEndpoint()
+        {
+            WithUnityProject(root => WithBridgeProfile(null, () =>
+            {
+                string defaultPath = Path.Combine(root, "Library", "UnityAutorunTool", "bridge-endpoint.json");
+                BridgeEndpointProvider.PublishForCurrentProcess("127.0.0.1", 17331);
+                byte[] original = File.ReadAllBytes(defaultPath);
+                string isolatedPath = Path.Combine(root, "Library", "UnityAutorunTool", "profiles", "scriptable-navigation-case", "bridge-endpoint.json");
+                WithBridgeProfile("scriptable-navigation-case", () =>
+                {
+                    BridgeEndpointProvider.PublishForCurrentProcess("127.0.0.1", 17332);
+                    BridgeEndpoint endpoint = new BridgeEndpointProvider().GetRequired();
+                    AssertEqual(isolatedPath, endpoint.StateFilePath, "Profile endpoint path is incorrect.");
+                    AssertEqual(17332, endpoint.Port, "Profile lookup returned a different bridge.");
+                    AssertTrue(original.SequenceEqual(File.ReadAllBytes(defaultPath)), "Profile publish changed the default endpoint.");
+                    JsonObject info = new BridgeEndpointProvider().GetInfo();
+                    AssertEqual(isolatedPath, Text(info["data"].AsObject(), "stateFilePath"), "Diagnostics do not identify the selected endpoint file.");
+                    BridgeEndpointProvider.ClearForCurrentProcess();
+                    AssertFalse(File.Exists(isolatedPath), "Profile cleanup did not remove its own endpoint.");
+                    AssertTrue(original.SequenceEqual(File.ReadAllBytes(defaultPath)), "Profile cleanup changed the default endpoint.");
+                });
+                AssertEqual(17331, new BridgeEndpointProvider().GetRequired().Port, "Default lookup did not retain the existing bridge.");
+                WithBridgeProfile("unpublished-profile", () => AssertFalse(Boolean(new BridgeEndpointProvider().GetInfo(), "ok"),
+                    "Missing profile silently fell back to the default bridge."));
+                AssertTrue(original.SequenceEqual(File.ReadAllBytes(defaultPath)), "Failed profile lookup changed the default endpoint.");
+                BridgeEndpointProvider.ClearForCurrentProcess();
+            }));
+        }
+
+        private static void TestInvalidBridgeProfile()
+        {
+            WithUnityProject(root => WithBridgeProfile(null, () =>
+            {
+                string defaultPath = Path.Combine(root, "Library", "UnityAutorunTool", "bridge-endpoint.json");
+                BridgeEndpointProvider.PublishForCurrentProcess("127.0.0.1", 17331);
+                byte[] original = File.ReadAllBytes(defaultPath);
+                foreach (string profile in new[] { "../default", "nested/profile", "nested\\profile", ".", "..", " ", "a b", "a.", ":", "中文", new string('a', 65) })
+                {
+                    WithBridgeProfile(profile, () =>
+                    {
+                        bool rejected = false;
+                        try { BridgeEndpointProvider.PublishForCurrentProcess("127.0.0.1", 17332); }
+                        catch (ArgumentException) { rejected = true; }
+                        AssertTrue(rejected, "Invalid bridge profile was accepted: " + profile);
+                        AssertFalse(Boolean(new BridgeEndpointProvider().GetInfo(), "ok"), "Invalid profile resolved an endpoint: " + profile);
+                        BridgeEndpointProvider.ClearForCurrentProcess();
+                        AssertTrue(original.SequenceEqual(File.ReadAllBytes(defaultPath)), "Invalid profile changed the default endpoint: " + profile);
+                    });
+                }
+                AssertFalse(Directory.Exists(Path.Combine(root, "Library", "UnityAutorunTool", "profiles")), "Invalid profiles created state directories.");
+                BridgeEndpointProvider.ClearForCurrentProcess();
+            }));
         }
 
         private static void TestScriptRequests()
@@ -447,6 +520,16 @@ namespace UnityAutorun.Mcp.Tests
                 }
                 finally { Environment.SetEnvironmentVariable("UNITY_AUTORUN_PROJECT_ROOT", previous); }
             });
+        }
+        private static void WithBridgeProfile(string profile, Action action)
+        {
+            string previous = Environment.GetEnvironmentVariable(BridgeEndpointProvider.ProfileEnvironmentVariable);
+            try
+            {
+                Environment.SetEnvironmentVariable(BridgeEndpointProvider.ProfileEnvironmentVariable, profile);
+                action();
+            }
+            finally { Environment.SetEnvironmentVariable(BridgeEndpointProvider.ProfileEnvironmentVariable, previous); }
         }
         private static void WithTemporaryDirectory(Action<string> action)
         {

@@ -18,6 +18,7 @@ public sealed class AutoRunBridgeServer
     private const int LinuxAddressAlreadyInUse = 98;
     private const int WindowsAlreadyExists = 183;
     private const int WindowsAddressAlreadyInUse = 10048;
+    private const int MonoDuplicateListenerPrefix = 400;
 
     private readonly object _lock = new();
     private HttpListener _listener;
@@ -186,7 +187,11 @@ public sealed class AutoRunBridgeServer
             || errorCode == MacOsAddressAlreadyInUse
             || errorCode == LinuxAddressAlreadyInUse
             || errorCode == WindowsAlreadyExists
-            || errorCode == WindowsAddressAlreadyInUse;
+            || errorCode == WindowsAddressAlreadyInUse
+            // Mono reports a same-process registered prefix as HTTP 400.
+            // Keep other bad-request errors visible rather than retrying them.
+            || (errorCode == MonoDuplicateListenerPrefix
+                && exception.Message.IndexOf("another listener", StringComparison.OrdinalIgnoreCase) >= 0);
     }
 
     private void HandleContext(HttpListenerContext context)

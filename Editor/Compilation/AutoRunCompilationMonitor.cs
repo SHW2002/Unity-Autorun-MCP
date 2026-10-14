@@ -9,6 +9,7 @@ using UnityEngine;
 public static class AutoRunCompilationMonitor
 {
     private const string MessagesKey = "UnityAutorunTool.Scripts.CompilerMessages";
+    private const string RefreshPendingKey = "UnityAutorunTool.Scripts.RefreshPending";
     private static bool _refreshPending;
 
     public static bool IsCompiling => _refreshPending || EditorApplication.isCompiling;
@@ -23,6 +24,8 @@ public static class AutoRunCompilationMonitor
 
     static AutoRunCompilationMonitor()
     {
+        _refreshPending = SessionState.GetBool(RefreshPendingKey, false);
+        if (_refreshPending) EditorApplication.update += RefreshOnNextUpdate;
         CompilationPipeline.compilationStarted += _ =>
             SessionState.SetString(MessagesKey, JsonUtility.ToJson(new StoredMessages()));
         CompilationPipeline.assemblyCompilationFinished += RecordMessages;
@@ -32,22 +35,32 @@ public static class AutoRunCompilationMonitor
     {
         if (_refreshPending) return;
         _refreshPending = true;
-        // The bridge must reply before Refresh can unload its request thread.
-        EditorApplication.delayCall += () =>
+        SessionState.SetBool(RefreshPendingKey, true);
+        // delayCall depends on Inspector updates, which can stop while Unity is
+        // unfocused. Run on the next main-thread update, after the RPC can reply.
+        EditorApplication.update += RefreshOnNextUpdate;
+    }
+
+    private static void RefreshOnNextUpdate()
+    {
+        if (EditorApplication.isCompiling || EditorApplication.isUpdating) return;
+        EditorApplication.update -= RefreshOnNextUpdate;
+        try
         {
-            try
-            {
-                AssetDatabase.Refresh();
-                UnityAutorun.Scripting.AutoRunScriptService.Refresh();
-            }
-            catch (Exception ex)
-            {
-                var messages = Messages;
-                messages.Add("Refresh failed: " + ex.Message);
-                SaveMessages(messages);
-            }
-            finally { _refreshPending = false; }
-        };
+            AssetDatabase.Refresh();
+            UnityAutorun.Scripting.AutoRunScriptService.Refresh();
+        }
+        catch (Exception ex)
+        {
+            var messages = Messages;
+            messages.Add("Refresh failed: " + ex.Message);
+            SaveMessages(messages);
+        }
+        finally
+        {
+            _refreshPending = false;
+            SessionState.SetBool(RefreshPendingKey, false);
+        }
     }
 
     private static void RecordMessages(string assemblyPath, CompilerMessage[] compilerMessages)

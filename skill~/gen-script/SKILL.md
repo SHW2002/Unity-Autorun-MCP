@@ -13,6 +13,8 @@ Read `get_script_guidance` once and [references/script-contract.md](references/s
 
 Identify the starting scene/UI, required parameters, exact actions, and observable final assertions from the request and project evidence. Ask for the missing starting state only if the available sources and runtime state cannot resolve it. Inspect actual project code, prefabs, and narrow `get_ui_state` or `list_buttons` queries; never invent project APIs or selectors.
 
+Before asserting a host state flag, inspect its getter and assignments to establish its meaning. An operation-in-progress flag does not prove authentication, completion, or resource availability. Preconditions must express the requested flow; do not add unrelated restrictions based on a flag's name.
+
 Use `list_scripts` and `get_script(includeSource=true)` to review candidate dependencies. Reuse a script only when its complete behavior, starting requirements, and outputs exactly match the required segment. A shared target name or partial overlap does not establish equivalence. Never modify a reused business script or built-in script to fit the new task. Different flows or starting states to the same target receive separate IDs and source files.
 
 ## Generate, compile, and self-test

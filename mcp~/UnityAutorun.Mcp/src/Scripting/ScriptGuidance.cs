@@ -15,6 +15,7 @@ namespace UnityAutorun.Mcp
                 ("data", JsonUtil.Obj(("contractVersion", "1.0"), ("mcpVersion", McpVersion.Current),
                     ("projectRoot", projectRoot), ("projectRootError", pathError),
                     ("scriptDirectory", ProjectPaths.GeneratedScriptsRelativePath),
+                    ("bridgeProfile", "Optional UNITY_AUTORUN_BRIDGE_PROFILE selects an isolated endpoint at Library/UnityAutorunTool/profiles/<profile>/bridge-endpoint.json. Unset or empty uses Library/UnityAutorunTool/bridge-endpoint.json. A profile is a simple 1-64 character name using ASCII letters, digits, hyphens and underscores; paths and whitespace are rejected. Set the same profile for Unity before the bridge's first initialization and for the MCP process. Unity captures the profile at initialization so later environment changes do not redirect publishing or cleanup. Never select a profile different from the intended Unity bridge."),
                     ("skills", new JsonArray { "gen-script", "run-script" }),
                     ("workflow", new JsonArray
                     {
