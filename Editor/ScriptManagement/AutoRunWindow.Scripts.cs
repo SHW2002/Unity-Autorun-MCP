@@ -286,7 +286,8 @@ public partial class AutoRunWindow
         if (string.IsNullOrWhiteSpace(path)) return null;
         string fullPath = Path.GetFullPath(path).Replace('\\', '/');
         string assets = Path.GetFullPath(Application.dataPath).Replace('\\', '/');
-        return fullPath.StartsWith(assets + "/", StringComparison.OrdinalIgnoreCase) ? "Assets/" + fullPath.Substring(assets.Length + 1) : null;
+        StringComparison pathComparison = Path.DirectorySeparatorChar == '\\' ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+        return fullPath.StartsWith(assets + "/", pathComparison) ? "Assets/" + fullPath.Substring(assets.Length + 1) : null;
     }
     private static void OpenScriptSource(string path)
     {
@@ -300,8 +301,9 @@ public partial class AutoRunWindow
         string reason;
         if (!AutoRunScriptService.CanDelete(definition.Id, out reason)) { AppendConsoleText(reason, AutoRunLogLevel.Warning); return; }
         string assetPath = GetScriptAssetPath(definition.SourcePath);
-        if (assetPath == null || !assetPath.StartsWith("Assets/AutorunScripts/Editor/", StringComparison.Ordinal))
-        { AppendConsoleText("Only business sources under Assets/AutorunScripts/Editor can be deleted here.", AutoRunLogLevel.Error); return; }
+        if (assetPath == null || (!assetPath.StartsWith("Assets/Editor/AutorunScripts/", StringComparison.Ordinal)
+            && !assetPath.StartsWith("Assets/AutorunScripts/Editor/", StringComparison.Ordinal)))
+        { AppendConsoleText("Only business sources under Assets/Editor/AutorunScripts or the legacy Assets/AutorunScripts/Editor can be deleted here.", AutoRunLogLevel.Error); return; }
         if (!EditorUtility.DisplayDialog("Delete Business Script", "Delete " + definition.Name + "?\n" + assetPath, "Delete", "Cancel")) return;
         if (!AutoRunScriptService.CanDelete(definition.Id, out reason)) { AppendConsoleText(reason, AutoRunLogLevel.Warning); return; }
         if (AssetDatabase.DeleteAsset(assetPath)) { AppendConsoleText("Deleted script: " + definition.Id); _selectedScriptId = ""; RefreshScriptDefinitions(); }

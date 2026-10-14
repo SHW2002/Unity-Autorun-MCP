@@ -30,7 +30,9 @@ Claude Desktop 只安装 MCP：选择包含 `claude_desktop_config.json` 的目�
 $gen-script 从启动游戏后的主界面打开背包，验证金币文本非空，并保存截图
 ```
 
-`gen-script` 先明确起点、业务流程、参数与成功断言，检查已有业务脚本与基础脚本，再在宿主项目的 `Assets/AutorunScripts/Editor/` 中创建 C# 源文件。生成代码通过 Unity 编译后会运行自测，失败时默认最多三轮修正，修正范围仅限本次生成的代码。
+`gen-script` 先明确起点、业务流程、参数与成功断言，检查已有业务脚本与基础脚本，再在宿主项目的 `Assets/Editor/AutorunScripts/` 中创建 C# 源文件。生成代码通过 Unity 编译后会运行自测，失败时默认最多三轮修正，修正范围仅限本次生成的代码。
+
+旧目录 `Assets/AutorunScripts/Editor/` 的脚本仍可发现、读取和管理，新脚本统一生成到 Editor 目录。工具不会自动迁移已有文件；移动脚本时应通过 `AssetDatabase` 保留 `.meta` 和 GUID。
 
 复用只允许完整一致的业务片段：起点、动作和结果都必须匹配。不能因为终点相同而复用不同流程，也不能为当前需求修改复用脚本。同一个目标的不同起点或不同流程使用独立脚本 ID 和文件。
 
@@ -128,7 +130,7 @@ public sealed class CheckCurrentUi : AutoRunScript
 
 名称长度为 1–64，只允许 ASCII 字母、数字、连字符和下划线，不接受空白或目录路径。Unity 进程在 Bridge 首次初始化前与 MCP 进程应配置相同 profile；Unity 按桥程序集在 `SessionState` 中保存本 Editor 会话首次使用的 profile（包括空值），跨 Domain Reload 保持不变，之后更改进程环境不会重定向该程序集 Bridge 的发布或清理。非法 profile、所选 profile 的端点文件缺失或失效都会报告错误，不会回落到默认路径或旧实例端点。
 
-`create_script` 的 `path` 相对于 `Assets/AutorunScripts/Editor/`，不会覆盖已有文件。调用 `refresh_scripts` 后等待 `unity_status` 中 `isCompiling=false`，检查 `compilerMessages` 和注册错误，再执行脚本。
+`create_script` 的 `path` 相对于 `Assets/Editor/AutorunScripts/`，不会覆盖已有文件。调用 `refresh_scripts` 后等待 `unity_status` 中 `isCompiling=false`，检查 `compilerMessages` 和注册错误，再执行脚本。
 
 资源刷新、脚本服务初始化与 Bridge 重载恢复通过 `EditorApplication.update` 安排到主线程执行，失焦时无需等待 Inspector 更新触发 `delayCall`。刷新请求先返回，再由后续编辑器更新处理；仍需等待编译和资源导入完成后读取实际结果。
 
@@ -164,7 +166,7 @@ MCP 的 .NET 测试不会编译 Unity Editor 代码或宿主生成脚本；实�
 ## 排查问题
 
 - 编译未完成：检查 `unity_status` 的编译信息和 Unity Console，等待完成再刷新脚本。
-- 脚本未出现：确认源文件在宿主 `Assets/AutorunScripts/Editor/`，类为 public、有正确 attribute 和无参构造，检查 ID/依赖错误。
+- 脚本未出现：确认源文件在宿主 `Assets/Editor/AutorunScripts/`，类为 public、有正确 attribute 和无参构造，检查 ID/依赖错误。
 - 起点不符：按脚本声明准备同一实际起点，或生成一个不同流程的独立脚本；不要修改共享脚本来掩盖差异。
 - 按钮无法点击：检查当前层级、遮挡、可交互状态、EventSystem 和精确选择器。
 - 运行中重载或停止游戏：查看保留的终止结果；执行器不会自动恢复任意迭代器或重放动作。

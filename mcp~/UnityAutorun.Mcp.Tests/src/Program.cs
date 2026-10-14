@@ -67,8 +67,9 @@ namespace UnityAutorun.Mcp.Tests
                 AssertTrue(Boolean(created, "ok"), "Initial script was not created.");
                 string path = Path.Combine(root, ProjectPaths.GeneratedScriptsRelativePath, "Business", "NewScript.cs");
                 AssertEqual(source, File.ReadAllText(path), "Source bytes changed during creation.");
-                AssertEqual("Assets/AutorunScripts/Editor/Business/NewScript.cs", Text(created["data"].AsObject(), "sourcePath"), "Returned path is not project-relative.");
+                AssertEqual("Assets/Editor/AutorunScripts/Business/NewScript.cs", Text(created["data"].AsObject(), "sourcePath"), "Returned path is not project-relative.");
                 AssertTrue(Boolean(created["data"].AsObject(), "requiresRefresh"), "Creation did not report pending compilation.");
+                AssertFalse(Directory.Exists(Path.Combine(root, ProjectPaths.LegacyGeneratedScriptsRelativePath)), "Creation still populated the legacy script directory.");
                 byte[] original = File.ReadAllBytes(path);
                 JsonObject rejected = ScriptFiles.Create(JsonUtil.Obj(("path", "Business/NewScript.cs"), ("source", "replacement")));
                 AssertFalse(Boolean(rejected, "ok"), "Creation overwrote an existing script.");
@@ -123,15 +124,30 @@ namespace UnityAutorun.Mcp.Tests
                 const string source = "// correct source";
                 ScriptFiles.Create(JsonUtil.Obj(("path", "Flow.cs"), ("source", source)));
                 Func<string, JsonNode> response = path => JsonUtil.Obj(("ok", true), ("data", JsonUtil.Obj(("script", JsonUtil.Obj(("id", "flow"), ("sourcePath", path))))));
-                JsonNode loaded = ScriptFiles.IncludeSource(response("Assets/AutorunScripts/Editor/Flow.cs"), true);
+                JsonNode loaded = ScriptFiles.IncludeSource(response("Assets/Editor/AutorunScripts/Flow.cs"), true);
                 AssertEqual(source, Text(loaded["data"]["script"].AsObject(), "source"), "Generated source was not included.");
                 ScriptFiles.IncludeSource(loaded, false);
                 AssertFalse(loaded["data"]["script"].AsObject().ContainsKey("source"), "includeSource=false still returned source.");
+                string legacyPath = Path.Combine(root, ProjectPaths.LegacyGeneratedScriptsRelativePath, "LegacyFlow.cs");
+                Directory.CreateDirectory(Path.GetDirectoryName(legacyPath));
+                File.WriteAllText(legacyPath, "// preserved legacy source");
+                JsonNode legacy = ScriptFiles.IncludeSource(response("Assets/AutorunScripts/Editor/LegacyFlow.cs"), true);
+                AssertEqual("// preserved legacy source", Text(legacy["data"]["script"].AsObject(), "source"), "Legacy source could no longer be read.");
+                JsonNode absoluteLegacy = ScriptFiles.IncludeSource(response(legacyPath), true);
+                AssertEqual("// preserved legacy source", Text(absoluteLegacy["data"]["script"].AsObject(), "source"), "Absolute legacy source path was rejected.");
+                JsonNode traversal = ScriptFiles.IncludeSource(response("Assets/Editor/AutorunScripts/../AutorunScripts/Flow.cs"), true);
+                AssertFalse(traversal["data"]["script"].AsObject().ContainsKey("source"), "Traversing source path was read.");
+                AssertTrue(traversal["data"]["script"].AsObject().ContainsKey("sourceError"), "Traversing source path was not diagnosed.");
                 string outside = Path.Combine(root, "ProjectSettings", "secret.cs");
                 File.WriteAllText(outside, "must-not-read");
                 JsonNode rejected = ScriptFiles.IncludeSource(response(outside), true);
                 AssertFalse(rejected["data"]["script"].AsObject().ContainsKey("source"), "Source reading escaped the script directory.");
                 AssertTrue(rejected["data"]["script"].AsObject().ContainsKey("sourceError"), "Rejected source path was not diagnosed.");
+                string prefixSibling = Path.Combine(root, "Assets", "Editor", "AutorunScriptsOutside", "secret.cs");
+                Directory.CreateDirectory(Path.GetDirectoryName(prefixSibling));
+                File.WriteAllText(prefixSibling, "must-not-read-prefix-sibling");
+                JsonNode sibling = ScriptFiles.IncludeSource(response(prefixSibling), true);
+                AssertFalse(sibling["data"]["script"].AsObject().ContainsKey("source"), "Source read accepted a sibling with a matching directory prefix.");
             });
         }
 
@@ -333,6 +349,7 @@ namespace UnityAutorun.Mcp.Tests
             {
                 JsonObject data = ScriptGuidance.Get()["data"].AsObject();
                 AssertEqual(ProjectPaths.GeneratedScriptsRelativePath, Text(data, "scriptDirectory"), "Guidance uses the wrong host directory.");
+                AssertEqual(ProjectPaths.LegacyGeneratedScriptsRelativePath, Text(data, "legacyScriptDirectory"), "Guidance omits the compatible legacy source directory.");
                 AssertEqual("gen-script,run-script", string.Join(",", data["skills"].AsArray().Select(value => value.GetValue<string>())), "Guidance has obsolete skill names.");
                 string contract = data.ToJsonString();
                 AssertTrue(contract.Contains("CheckPreconditions") && contract.Contains("Never edit reused scripts"), "Strict business-flow contract is missing.");

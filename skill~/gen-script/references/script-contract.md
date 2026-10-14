@@ -4,7 +4,9 @@ The connected MCP's `get_script_guidance` is authoritative for the current versi
 
 ## Unity assembly placement
 
-Inspect ancestor `.asmdef` files before creating source under `Assets/AutorunScripts/Editor/`. An ancestor host assembly definition can absorb an Editor subfolder; the generated script must compile in an Editor assembly that can reference `UnityAutorunTool.Editor` and the actual host API assemblies. When needed, create an Editor-only assembly definition with verified named assembly references. If host APIs are in predefined `Assembly-CSharp`, keep scripts in predefined `Assembly-CSharp-Editor` rather than creating an `.asmdef` that references `Assembly-CSharp`; Unity forbids that reference. Do not invent assembly names or modify unrelated host assembly definitions to force compilation. Resolve an incompatible layout explicitly before claiming generation success.
+Create new business scripts under `Assets/Editor/AutorunScripts/`. Source reads and script discovery remain compatible with existing scripts under `Assets/AutorunScripts/Editor/`; the generation workflow does not silently migrate them. `create_script.path` remains relative to the new directory, such as `Business/OpenObservedUi.cs`.
+
+Inspect ancestor `.asmdef` files before creating source under `Assets/Editor/AutorunScripts/`. An ancestor host assembly definition can absorb an Editor subfolder; the generated script must compile in an Editor assembly that can reference `UnityAutorunTool.Editor` and the actual host API assemblies. When needed, create an Editor-only assembly definition with verified named assembly references. If host APIs are in predefined `Assembly-CSharp`, keep scripts in predefined `Assembly-CSharp-Editor` rather than creating an `.asmdef` that references `Assembly-CSharp`; Unity forbids that reference. Do not invent assembly names or modify unrelated host assembly definitions to force compilation. Resolve an incompatible layout explicitly before claiming generation success.
 
 ## Authoring contract
 
@@ -19,6 +21,12 @@ For a requested startup flow, put `PreparePlayMode=true` on the root business sc
 Context members include `RunId`, `ScriptId`, `Host`, `GetString`, `GetInt`, `GetNumber`, `GetBool`, `Log`, `AddArtifact`, `Fail(code,message)`, and `Require(operationResult)`. `Require` checks operation success; an assertion of UI state additionally requires `result.Matched`.
 
 Host operations include `IsPlaying`, `ClickButton(AutoRunScriptButtonSelector)`, `EvaluateUiState(AutoRunScriptUiStateQuery)`, `CaptureScreenshot(projectRelativePath)`, and `StopPlayMode()`. Use actual project APIs for project-specific behavior. The core runtime remains generic.
+
+## Startup completion and delayed popups
+
+Inspect the host's delayed automatic popup queue and loading completion signals before defining the final startup assertion. With the user's dismissal authorization, close only popup types whose actual close controls and queue advancement have been verified from source and runtime evidence. Wait for the next queued item rather than assuming one close empties the queue. Unknown popups fail instead of being dismissed by a guessed selector.
+
+Keep an exact, independently runnable popup-dismissal business segment reusable through declared `context.Call` dependencies. After it completes, require the verified popup/loading queues to finish and the target to stay visible, interactable and unobstructed for an evidence-backed bounded stability interval. A momentarily clickable home screen before a delayed advertisement appears is not success; do not substitute a fixed sleep for queue/state completion evidence or place host popup names/APIs in the generic core.
 
 ## Built-in dependencies
 
@@ -126,6 +134,6 @@ public sealed class ColdStartToObservedUi : AutoRunScript
 
 ## MCP workflow
 
-Use `create_script` with `path` relative to `Assets/AutorunScripts/Editor/` and `source` containing C#. Use the normal file editor only to repair files created by the current generation task. `refresh_scripts` requests Unity asset refresh; poll `unity_status` for compilation completion and inspect `compilerMessages`. Verify registered metadata and `validationError` through `list_scripts`/`get_script`.
+Use `create_script` with `path` relative to `Assets/Editor/AutorunScripts/` and `source` containing C#. Use the normal file editor only to repair files created by the current generation task. `refresh_scripts` requests Unity asset refresh; poll `unity_status` for compilation completion and inspect `compilerMessages`. Verify registered metadata and `validationError` through `list_scripts`/`get_script`.
 
 `start_script` takes `scriptId`, string-valued `parameters` or `parametersJson` (choose one), optional `runId`, `ensurePlayMode` (default false), and `timeoutSeconds`. `preparePlayMode` is compiled script metadata, not a `start_script` argument. Effective preparation is caller `ensurePlayMode=true` OR root `preparePlayMode=true`, never dependency inference. Reuse a run ID only for transport retries of the same execution. Every intentional new self-test, including a rerun after compilation or repair, uses a new ID; an old ID returns its retained result instead of executing new code. `get_script_status` with that ID returns `data.scriptRun`, including state, terminal flag, code, message, call stack, logs and artifacts. A failed terminal result still contains the full run evidence. Poll only while nonterminal; call `cancel_script` when the user cancels.

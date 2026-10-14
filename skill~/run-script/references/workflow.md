@@ -4,6 +4,8 @@ This reference is self-contained within the installed Skill. Use the connected M
 
 ## Discover
 
+New business sources use `Assets/Editor/AutorunScripts/`. Existing sources under `Assets/AutorunScripts/Editor/` remain compatible for discovery, source inspection and execution. Use the registered `sourcePath` and script ID without relocating files.
+
 `list_scripts` supports kind `business`, `basic`, or `all`, plus `query`. `get_script` accepts `scriptId` and `includeSource`. Check its exact starting conditions, `preparePlayMode` flag, parameter reads, declared dependencies, final assertions and `validationError`. Business scripts must declare Preconditions and override CheckPreconditions. Built-ins include `start-play-mode`, `click-button`, `wait`, `wait-for-ui-state`, `screenshot`, `stop-play-mode`, and `log`; do not substitute them for an existing business flow without the user's requested scope supporting that action.
 
 ## Run

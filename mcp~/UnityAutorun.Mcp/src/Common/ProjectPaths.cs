@@ -5,7 +5,8 @@ namespace UnityAutorun.Mcp
 {
     public static class ProjectPaths
     {
-        public const string GeneratedScriptsRelativePath = "Assets/AutorunScripts/Editor";
+        public const string GeneratedScriptsRelativePath = "Assets/Editor/AutorunScripts";
+        public const string LegacyGeneratedScriptsRelativePath = "Assets/AutorunScripts/Editor";
 
         public static string ResolveProjectRootDirectory()
         {
@@ -48,7 +49,7 @@ namespace UnityAutorun.Mcp
             if (string.IsNullOrWhiteSpace(requestedPath))
                 throw new ArgumentException("A relative C# script path is required.");
             if (Path.IsPathRooted(requestedPath))
-                throw new ArgumentException("Script path must be relative to Assets/AutorunScripts/Editor.");
+                throw new ArgumentException("Script path must be relative to Assets/Editor/AutorunScripts.");
 
             // Treat both separator styles consistently, including when the MCP runs on macOS/Linux.
             string normalized = requestedPath.Replace('\\', '/');
@@ -74,11 +75,19 @@ namespace UnityAutorun.Mcp
 
         public static string ResolveGeneratedSourcePath(string sourcePath)
         {
+            if (string.IsNullOrWhiteSpace(sourcePath))
+                throw new ArgumentException("A C# script source path is required.");
+            string normalized = sourcePath.Replace('\\', '/');
+            foreach (string segment in normalized.Split('/'))
+                if (segment == "." || segment == "..")
+                    throw new ArgumentException("Script source path must not contain traversing segments.");
             string projectRoot = ResolveProjectRootDirectory();
             string root = Path.GetFullPath(Path.Combine(projectRoot, GeneratedScriptsRelativePath));
+            string legacyRoot = Path.GetFullPath(Path.Combine(projectRoot, LegacyGeneratedScriptsRelativePath));
             string target = Path.IsPathRooted(sourcePath) ? Path.GetFullPath(sourcePath)
-                : Path.GetFullPath(Path.Combine(projectRoot, sourcePath.Replace('\\', Path.DirectorySeparatorChar).Replace('/', Path.DirectorySeparatorChar)));
-            EnsureWithin(root, target);
+                : Path.GetFullPath(Path.Combine(projectRoot, normalized.Replace('/', Path.DirectorySeparatorChar)));
+            if (!IsWithin(root, target) && !IsWithin(legacyRoot, target))
+                throw new ArgumentException("Script source is outside Assets/Editor/AutorunScripts and the legacy generated script directory.");
             if (!string.Equals(Path.GetExtension(target), ".cs", StringComparison.OrdinalIgnoreCase))
                 throw new ArgumentException("Script source must be a .cs file.");
             EnsureNoLinkedAncestors(target);
@@ -87,9 +96,14 @@ namespace UnityAutorun.Mcp
 
         private static void EnsureWithin(string root, string target)
         {
+            if (!IsWithin(root, target))
+                throw new ArgumentException("Script path is outside Assets/Editor/AutorunScripts.");
+        }
+
+        private static bool IsWithin(string root, string target)
+        {
             StringComparison comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
-            if (!target.StartsWith(root.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar, comparison))
-                throw new ArgumentException("Script path is outside Assets/AutorunScripts/Editor.");
+            return target.StartsWith(root.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar, comparison);
         }
 
         private static void EnsureNoLinkedAncestors(string path)

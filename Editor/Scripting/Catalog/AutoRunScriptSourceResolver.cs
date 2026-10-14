@@ -10,7 +10,8 @@ namespace UnityAutorun.Scripting
     /// <summary>Resolves only relevant source candidates; never reads every script in the host project.</summary>
     internal sealed class AutoRunScriptSourceResolver
     {
-        private const string GeneratedDirectory = "Assets/AutorunScripts/Editor";
+        private const string GeneratedDirectory = "Assets/Editor/AutorunScripts";
+        private const string LegacyGeneratedDirectory = "Assets/AutorunScripts/Editor";
         private readonly Dictionary<string, SourceEntry> _entries = new Dictionary<string, SourceEntry>(StringComparer.Ordinal);
         private readonly Dictionary<string, SourceEntry> _refreshEntries = new Dictionary<string, SourceEntry>(StringComparer.Ordinal);
         private readonly Dictionary<string, string[]> _nameCandidates = new Dictionary<string, string[]>(StringComparer.Ordinal);
@@ -30,6 +31,7 @@ namespace UnityAutorun.Scripting
             _scopedCandidates.Clear();
             _resolvedEntries.Clear();
             AddDirectory(GeneratedDirectory);
+            AddDirectory(LegacyGeneratedDirectory);
             var package = UnityEditor.PackageManager.PackageInfo.FindForAssembly(typeof(AutoRunScript).Assembly);
             if (package != null)
             {

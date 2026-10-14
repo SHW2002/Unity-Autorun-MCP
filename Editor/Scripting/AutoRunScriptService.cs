@@ -239,10 +239,14 @@ namespace UnityAutorun.Scripting
             string[] callers = Definitions.Where(value => (value.Dependencies ?? new string[0]).Contains(scriptId)).Select(value => value.Name).ToArray();
             if (callers.Length > 0) { reason = "Referenced by: " + string.Join(", ", callers); return false; }
             if (HasActiveRun) { reason = "Wait for the active script to finish before deleting script source."; return false; }
-            string root = Path.GetFullPath(Path.Combine(Application.dataPath, "AutorunScripts", "Editor")) + Path.DirectorySeparatorChar;
+            string root = Path.GetFullPath(Path.Combine(Application.dataPath, "Editor", "AutorunScripts")) + Path.DirectorySeparatorChar;
+            string legacyRoot = Path.GetFullPath(Path.Combine(Application.dataPath, "AutorunScripts", "Editor")) + Path.DirectorySeparatorChar;
             StringComparison pathComparison = Path.DirectorySeparatorChar == '\\' ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
-            if (string.IsNullOrEmpty(definition.SourcePath) || !Path.GetFullPath(definition.SourcePath).StartsWith(root, pathComparison))
-            { reason = "Only business scripts under Assets/AutorunScripts/Editor can be deleted from this manager."; return false; }
+            if (string.IsNullOrEmpty(definition.SourcePath))
+            { reason = "Script source could not be identified uniquely."; return false; }
+            string sourcePath = Path.GetFullPath(definition.SourcePath);
+            if (!sourcePath.StartsWith(root, pathComparison) && !sourcePath.StartsWith(legacyRoot, pathComparison))
+            { reason = "Only business scripts under Assets/Editor/AutorunScripts or the legacy Assets/AutorunScripts/Editor can be deleted from this manager."; return false; }
             // A source file can contain several registered script classes; never delete another script accidentally.
             if (Definitions.Any(value => value.Id != scriptId && value.SourcePath == definition.SourcePath))
             { reason = "This source file contains multiple registered scripts; edit it directly."; return false; }
