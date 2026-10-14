@@ -3,13 +3,69 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Text.RegularExpressions;
+using System.Threading.Tasks;
 
 public static class McpProcessService
 {
     private const int MaxMcpVersionLength = 36;
-    private static readonly Dictionary<string, string> McpVersionCache =
-        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+    private const int MaximumVersionCacheEntries = 128;
+    private const int ProcessScanTimeoutMilliseconds = 5000;
+    private static readonly StringComparer BinaryPathComparer = Environment.OSVersion.Platform == PlatformID.Win32NT
+        ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
+    private static readonly object ProcessScanLock = new object();
+    private static readonly object VersionCacheLock = new object();
+    private static readonly object VersionTasksLock = new object();
+    private static readonly Dictionary<string, VersionCacheEntry> McpVersionCache =
+        new Dictionary<string, VersionCacheEntry>(BinaryPathComparer);
+    private static readonly Dictionary<string, Task<string>> VersionTasks =
+        new Dictionary<string, Task<string>>(BinaryPathComparer);
+    private static Task<List<McpProcessInfo>> _activeProcessScan;
+    private static long _versionCacheAccess;
+
+    /// <summary>
+    /// Starts an explicit background refresh. Concurrent refreshes share one scan;
+    /// callers receive independent snapshots. This method never touches Unity APIs.
+    /// Unlike the legacy synchronous entry point, scan failures fault the task so
+    /// the UI can report a diagnostic rather than displaying a false empty list.
+    /// </summary>
+    public static Task<List<McpProcessInfo>> ListUnityAutorunProcessesAsync(string binaryPath = null)
+    {
+        Task<List<McpProcessInfo>> scan;
+        lock (ProcessScanLock)
+        {
+            if (_activeProcessScan == null || _activeProcessScan.IsCompleted)
+                _activeProcessScan = Task.Run(ListFromPowerShell);
+            scan = _activeProcessScan;
+        }
+        return ReadProcessSnapshotAsync(scan, binaryPath);
+    }
+
+    private static async Task<List<McpProcessInfo>> ReadProcessSnapshotAsync(
+        Task<List<McpProcessInfo>> scan, string binaryPath)
+    {
+        List<McpProcessInfo> processes = await scan.ConfigureAwait(false);
+        return processes.Where(info => string.IsNullOrEmpty(binaryPath) || IsSameBinaryPath(info.BinaryPath, binaryPath))
+            .Select(CloneProcessInfo).ToList();
+    }
+
+    public static Task<string> GetMcpVersionAsync(string binaryPath)
+    {
+        string path = NormalizePath(binaryPath);
+        if (string.IsNullOrEmpty(path)) return Task.FromResult("unknown");
+        lock (VersionTasksLock)
+        {
+            if (VersionTasks.TryGetValue(path, out Task<string> pending) && !pending.IsCompleted)
+                return pending;
+            // Keep only in-flight reads; the bounded metadata cache stores results.
+            foreach (string completedPath in VersionTasks.Where(pair => pair.Value.IsCompleted).Select(pair => pair.Key).ToArray())
+                VersionTasks.Remove(completedPath);
+            Task<string> task = Task.Run(() => GetMcpVersion(path));
+            if (VersionTasks.Count < MaximumVersionCacheEntries) VersionTasks[path] = task;
+            return task;
+        }
+    }
 
     public static List<McpProcessInfo> ListUnityAutorunProcesses()
     {
@@ -63,17 +119,25 @@ public static class McpProcessService
             return new List<McpProcessInfo>();
         }
 
+        // Process name discovery is cheap and avoids starting PowerShell when no
+        // dotnet/apphost process could be a Unity Autorun MCP server.
+        if (!HasPotentialMcpProcesses()) return new List<McpProcessInfo>();
+
         var startInfo = new ProcessStartInfo
         {
             FileName = "powershell.exe",
             Arguments = "-NoProfile -ExecutionPolicy Bypass -Command \""
-                + "$all=Get-CimInstance Win32_Process;"
+                + "[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false);"
+                + "$ErrorActionPreference='Stop';"
+                + "$all=Get-CimInstance Win32_Process -Property ProcessId,ParentProcessId,Name,CommandLine,ExecutablePath;"
+                + "$byId=@{};foreach($process in $all){$byId[[int]$process.ProcessId]=$process};"
                 + "$p=$all | Where-Object {($_.Name -eq 'UnityAutorun.Mcp.exe' -and $_.CommandLine -like '* mcp*')"
                 + " -or ($_.Name -eq 'dotnet.exe' -and $_.CommandLine -like '*UnityAutorun.Mcp.dll*' -and $_.CommandLine -like '* mcp*')};"
                 + "$p | ForEach-Object {"
-                + "$item=$_;$parent=$all | Where-Object {$_.ProcessId -eq $item.ParentProcessId} | Select-Object -First 1;"
-                + "$ai=$parent;while($ai -and $ai.Name -notmatch '^(codex(?:-cli)?|claude(?:-code)?|cursor|code(?: - insiders)?|windsurf)(\\.exe)?$'){"
-                + "$ai=$all | Where-Object {$_.ProcessId -eq $ai.ParentProcessId} | Select-Object -First 1};"
+                + "$item=$_;$parent=$byId[[int]$item.ParentProcessId];"
+                + "$ai=$parent;$depth=0;while($ai -and $depth -lt 64 -and $ai.Name -notmatch '^(codex(?:-cli)?|claude(?:-code)?|cursor|code(?: - insiders)?|windsurf)(\\.exe)?$'){"
+                + "$ai=$byId[[int]$ai.ParentProcessId];$depth++};"
+                + "if($depth -ge 64){$ai=$null};"
                 + "$aiPid=if($ai){$ai.ProcessId}else{0};$aiName=if($ai){$ai.Name}else{'unknown'};"
                 + "$parentName=if($parent){$parent.Name}else{'unknown'};"
                 + "$exe=if($item.ExecutablePath){$item.ExecutablePath}else{''};"
@@ -82,11 +146,26 @@ public static class McpProcessService
             CreateNoWindow = true,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
+            StandardOutputEncoding = Encoding.UTF8,
+            StandardErrorEncoding = Encoding.UTF8,
         };
 
         using Process process = Process.Start(startInfo);
-        string output = process.StandardOutput.ReadToEnd();
-        process.WaitForExit(2000);
+        if (process == null) throw new InvalidOperationException("Could not start MCP process discovery.");
+        Task<string> outputTask = process.StandardOutput.ReadToEndAsync();
+        Task<string> errorTask = process.StandardError.ReadToEndAsync();
+        if (!process.WaitForExit(ProcessScanTimeoutMilliseconds))
+        {
+            try { process.Kill(); }
+            catch { /* The helper may already have exited; never kill MCP servers here. */ }
+            throw new TimeoutException("MCP process discovery exceeded " + ProcessScanTimeoutMilliseconds + " ms.");
+        }
+        if (!Task.WaitAll(new Task[] { outputTask, errorTask }, 1000))
+            throw new TimeoutException("MCP process discovery output did not close after the helper exited.");
+        string output = outputTask.GetAwaiter().GetResult();
+        string error = errorTask.GetAwaiter().GetResult();
+        if (process.ExitCode != 0)
+            throw new InvalidOperationException("MCP process discovery failed: " + Shorten(CleanCommandLine(error)));
         return output.Split(new[] { "\r\n", "\n" }, StringSplitOptions.RemoveEmptyEntries)
             .Select(ParseLine)
             .Where(info => info != null)
@@ -94,6 +173,32 @@ public static class McpProcessService
             .ThenBy(info => info.ParentProcessId)
             .ThenBy(info => info.ProcessId)
             .ToList();
+    }
+
+    private static bool HasPotentialMcpProcesses()
+    {
+        bool found = false;
+        foreach (string name in new[] { "dotnet", "UnityAutorun.Mcp" })
+        {
+            foreach (Process process in Process.GetProcessesByName(name))
+            {
+                using (process) { found = true; }
+            }
+            if (found) return true;
+        }
+        return false;
+    }
+
+    private static McpProcessInfo CloneProcessInfo(McpProcessInfo info)
+    {
+        return new McpProcessInfo
+        {
+            ProcessId = info.ProcessId, ProcessName = info.ProcessName,
+            ParentProcessId = info.ParentProcessId, ParentProcessName = info.ParentProcessName,
+            AiProcessId = info.AiProcessId, AiProcessName = info.AiProcessName,
+            McpVersion = info.McpVersion, PublishedAt = info.PublishedAt,
+            BinaryPath = info.BinaryPath, CommandLine = info.CommandLine
+        };
     }
 
     private static McpProcessInfo ParseLine(string line)
@@ -172,37 +277,52 @@ public static class McpProcessService
 
     public static string GetMcpVersion(string binaryPath)
     {
-        if (string.IsNullOrEmpty(binaryPath) || !File.Exists(binaryPath))
+        string path = NormalizePath(binaryPath);
+        if (string.IsNullOrEmpty(path))
         {
             return "unknown";
         }
 
         try
         {
-            var file = new FileInfo(binaryPath);
-            string cacheKey = binaryPath
-                + "|"
-                + file.Length
-                + "|"
-                + file.LastWriteTimeUtc.Ticks;
-            if (McpVersionCache.TryGetValue(cacheKey, out string cachedVersion))
+            var file = new FileInfo(path);
+            file.Refresh();
+            if (!file.Exists) return "unknown";
+            long length = file.Length;
+            long lastWriteTimeUtcTicks = file.LastWriteTimeUtc.Ticks;
+            lock (VersionCacheLock)
             {
-                return cachedVersion;
-            }
+                if (McpVersionCache.TryGetValue(path, out VersionCacheEntry cached)
+                    && cached.Length == length && cached.LastWriteTimeUtcTicks == lastWriteTimeUtcTicks)
+                {
+                    cached.LastAccess = ++_versionCacheAccess;
+                    return cached.Version;
+                }
 
-            string version = NormalizeMcpVersion(ReadFileVersion(binaryPath));
-            if (string.IsNullOrEmpty(version))
-            {
-                version = "unknown";
+                string version = NormalizeMcpVersion(ReadFileVersion(path));
+                if (string.IsNullOrEmpty(version)) version = "unknown";
+                if (!McpVersionCache.ContainsKey(path) && McpVersionCache.Count >= MaximumVersionCacheEntries)
+                    McpVersionCache.Remove(McpVersionCache.OrderBy(pair => pair.Value.LastAccess).First().Key);
+                McpVersionCache[path] = new VersionCacheEntry
+                {
+                    Length = length, LastWriteTimeUtcTicks = lastWriteTimeUtcTicks,
+                    Version = version, LastAccess = ++_versionCacheAccess
+                };
+                return version;
             }
-
-            McpVersionCache[cacheKey] = version;
-            return version;
         }
         catch
         {
             return "unknown";
         }
+    }
+
+    private sealed class VersionCacheEntry
+    {
+        public long Length;
+        public long LastWriteTimeUtcTicks;
+        public string Version;
+        public long LastAccess;
     }
 
     private static string ReadFileVersion(string executablePath)

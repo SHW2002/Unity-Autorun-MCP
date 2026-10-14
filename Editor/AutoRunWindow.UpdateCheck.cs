@@ -1,10 +1,15 @@
 using System;
 using System.IO;
+using System.Threading.Tasks;
 using UnityEditor;
 using UnityEngine;
 
 public partial class AutoRunWindow
 {
+    private string _mcpVersionText = "Open settings to check versions";
+    private string _mcpVersionSource;
+    private Task<string> _mcpVersionTask;
+    private bool _mcpVersionRefreshRequested;
     private void EnableUpdateCheck()
     {
         AutoRunUpdateCheckService.StatusChanged -= HandleUpdateStatusChanged;
@@ -36,7 +41,7 @@ public partial class AutoRunWindow
             RenderVersionRow("Skill", skillStatus.Name + " | " + BuildSkillVersionText(skillStatus),
                 skillStatus.IsTargetValid ? skillStatus.InstallDirectory : skillStatus.Error);
         }
-        if (SkillInstallService.HasLegacySkill(_mcpInstallTargetPath))
+        if (_hasLegacySkill)
         {
             EditorGUILayout.HelpBox("Legacy unity-autorun is still installed. Review custom changes and uninstall it manually; this installer preserves it.", MessageType.Info);
         }
@@ -60,6 +65,11 @@ public partial class AutoRunWindow
         }
 
         updates.End();
+        if (GUILayout.Button("Refresh Installed Versions", GUILayout.Width(180)))
+        {
+            _mcpVersionRefreshRequested = true;
+            InvalidateSkillInstallStatus();
+        }
         GUILayout.EndVertical();
     }
 
@@ -80,25 +90,38 @@ public partial class AutoRunWindow
         row.End();
     }
 
-    private static string BuildMcpVersionText()
+    private string BuildMcpVersionText() { return _mcpVersionText; }
+
+    private void PollMcpVersionTask()
     {
-        string sourceVersion = McpInstallConfig.GetMcpSourceVersion();
-        string publishedPath;
+        if (_mcpVersionTask != null && _mcpVersionTask.IsCompleted)
+        {
+            _mcpVersionText = _mcpVersionTask.IsFaulted
+                ? "Version check failed: " + _mcpVersionTask.Exception.GetBaseException().Message
+                : _mcpVersionTask.IsCanceled ? "Version check cancelled"
+                : FormatMcpVersionText(_mcpVersionSource, _mcpVersionTask.Result);
+            _mcpVersionTask = null;
+            Repaint();
+        }
+        if (_mcpVersionTask != null || !_mcpVersionRefreshRequested) return;
+        _mcpVersionRefreshRequested = false;
         try
         {
-            publishedPath = McpInstallConfig.GetPublishedDllPath();
+            _mcpVersionSource = McpInstallConfig.GetMcpSourceVersion();
+            string publishedPath = McpInstallConfig.GetPublishedDllPath();
+            if (!File.Exists(publishedPath)) _mcpVersionText = "source v" + _mcpVersionSource + " | not published";
+            else
+            {
+                _mcpVersionText = "Checking versions…";
+                _mcpVersionTask = McpProcessService.GetMcpVersionAsync(publishedPath);
+            }
         }
-        catch
-        {
-            publishedPath = "";
-        }
+        catch (Exception exception) { _mcpVersionText = "Version check failed: " + exception.Message; }
+        Repaint();
+    }
 
-        if (string.IsNullOrEmpty(publishedPath) || !File.Exists(publishedPath))
-        {
-            return "source v" + sourceVersion + " | not published";
-        }
-
-        string publishedVersion = McpProcessService.GetMcpVersion(publishedPath);
+    private static string FormatMcpVersionText(string sourceVersion, string publishedVersion)
+    {
         string suffix = "";
         if (AutoRunVersionComparer.TryCompare(
                 sourceVersion,

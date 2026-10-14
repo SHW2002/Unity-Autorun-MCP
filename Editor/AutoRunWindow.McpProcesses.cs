@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using UnityEditor;
 using UnityEngine;
 
@@ -11,6 +12,9 @@ public partial class AutoRunWindow
 
     private List<McpProcessInfo> _mcpProcesses = new List<McpProcessInfo>();
     private double _mcpProcessLastRefreshAt;
+    private Task<List<McpProcessInfo>> _mcpProcessTask;
+    private bool _mcpProcessRefreshRequested;
+    private string _mcpProcessError;
 
     private void RenderMcpProcesses()
     {
@@ -32,6 +36,8 @@ public partial class AutoRunWindow
             GUILayout.ExpandWidth(true)
         );
         summary.End();
+        if (_mcpProcessTask != null) GUILayout.Label("Refreshing…", EditorStyles.miniLabel);
+        if (!string.IsNullOrEmpty(_mcpProcessError)) EditorGUILayout.HelpBox(_mcpProcessError, MessageType.Warning);
 
         float tableWidth = Mathf.Max(1f, GetWindowContentWidth() - McpProcessTablePadding);
         if (tableWidth < McpProcessTableMinimumWidth)
@@ -239,7 +245,31 @@ public partial class AutoRunWindow
 
     private void RefreshMcpProcesses()
     {
-        _mcpProcesses = McpProcessService.ListUnityAutorunProcesses();
-        _mcpProcessLastRefreshAt = EditorApplication.timeSinceStartup;
+        _mcpProcessRefreshRequested = true;
+    }
+
+    private void PollWindowTasks()
+    {
+        if (_mcpProcessTask != null && _mcpProcessTask.IsCompleted)
+        {
+            if (_mcpProcessTask.IsFaulted)
+                _mcpProcessError = _mcpProcessTask.Exception.GetBaseException().Message;
+            else if (!_mcpProcessTask.IsCanceled)
+            {
+                _mcpProcesses = _mcpProcessTask.Result;
+                _mcpProcessError = null;
+            }
+            _mcpProcessTask = null;
+            Repaint();
+        }
+        if (_mcpProcessTask == null && (_mcpProcessRefreshRequested
+            || (_showMcpSettings && EditorApplication.timeSinceStartup - _mcpProcessLastRefreshAt > 10)))
+        {
+            _mcpProcessRefreshRequested = false;
+            _mcpProcessLastRefreshAt = EditorApplication.timeSinceStartup;
+            _mcpProcessTask = McpProcessService.ListUnityAutorunProcessesAsync();
+            Repaint();
+        }
+        PollMcpVersionTask();
     }
 }

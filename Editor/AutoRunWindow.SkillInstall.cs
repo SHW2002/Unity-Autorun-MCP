@@ -5,10 +5,9 @@ using UnityEngine;
 
 public partial class AutoRunWindow
 {
-    private const double SkillStatusRefreshIntervalSeconds = 2d;
     private List<SkillInstallStatus> _skillInstallStatuses;
     private string _skillInstallStatusTarget = "";
-    private double _skillInstallStatusRefreshedAt = -1d;
+    private bool _hasLegacySkill;
 
     private void RenderSkillInstallButton()
     {
@@ -41,12 +40,11 @@ public partial class AutoRunWindow
     private List<SkillInstallStatus> GetSkillInstallStatuses()
     {
         string target = _mcpInstallTargetPath ?? "";
-        if (_skillInstallStatuses == null || !string.Equals(target, _skillInstallStatusTarget, StringComparison.OrdinalIgnoreCase)
-            || EditorApplication.timeSinceStartup - _skillInstallStatusRefreshedAt >= SkillStatusRefreshIntervalSeconds)
+        if (_skillInstallStatuses == null || !string.Equals(target, _skillInstallStatusTarget, StringComparison.OrdinalIgnoreCase))
         {
             _skillInstallStatuses = SkillInstallService.GetStatuses(target);
+            _hasLegacySkill = SkillInstallService.HasLegacySkill(target);
             _skillInstallStatusTarget = target;
-            _skillInstallStatusRefreshedAt = EditorApplication.timeSinceStartup;
         }
         return _skillInstallStatuses;
     }
@@ -54,6 +52,5 @@ public partial class AutoRunWindow
     {
         _skillInstallStatuses = null;
         _skillInstallStatusTarget = "";
-        _skillInstallStatusRefreshedAt = -1d;
     }
 }

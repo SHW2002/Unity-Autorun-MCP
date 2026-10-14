@@ -16,8 +16,21 @@ public partial class AutoRunWindow
     [SerializeField] private double _scriptTimeoutSeconds = 120;
     [SerializeField] private string _selectedScriptRunId = "";
     private List<AutoRunScriptDefinition> _scriptDefinitions = new List<AutoRunScriptDefinition>();
+    private List<string> _scriptCatalogErrors = new List<string>();
     private List<AutoRunScriptRunStatus> _scriptRuns = new List<AutoRunScriptRunStatus>();
     private readonly HashSet<string> _collapsedScriptNodes = new HashSet<string>();
+    private static readonly string[] ScriptKindLabels = { "All", "Business", "Basic" };
+    private readonly List<AutoRunScriptDefinition> _filteredScripts = new List<AutoRunScriptDefinition>();
+    private string[] _scriptLabels = new string[0];
+    private string _cachedScriptSearch;
+    private int _cachedScriptKind = -1;
+    private bool _scriptFilterDirty = true;
+    private long _catalogRevision = -1;
+    private long _runsRevision = -1;
+    [SerializeField] private bool _showScriptDetails;
+    [SerializeField] private bool _showScriptRunOptions;
+    [SerializeField] private bool _showScriptRunDetails;
+    [SerializeField] private bool _showScriptHistory;
     private double _scriptLastPoll;
     private bool _showScriptLogs;
     private string _scriptWindowError;
@@ -26,16 +39,36 @@ public partial class AutoRunWindow
     {
         EditorApplication.update -= PollScriptWindow;
         EditorApplication.update += PollScriptWindow;
-        RefreshScriptDefinitions();
+        AutoRunScriptService.CatalogChanged -= HandleScriptCatalogChanged;
+        AutoRunScriptService.CatalogChanged += HandleScriptCatalogChanged;
+        AutoRunScriptService.RunsChanged -= HandleScriptRunsChanged;
+        AutoRunScriptService.RunsChanged += HandleScriptRunsChanged;
+        ReadScriptDefinitions();
+        RefreshScriptRuns();
     }
-    private void DisableScriptWindow() { EditorApplication.update -= PollScriptWindow; }
+    private void DisableScriptWindow()
+    {
+        EditorApplication.update -= PollScriptWindow;
+        AutoRunScriptService.CatalogChanged -= HandleScriptCatalogChanged;
+        AutoRunScriptService.RunsChanged -= HandleScriptRunsChanged;
+    }
+    private void HandleScriptCatalogChanged() { _catalogRevision = -1; }
+    private void HandleScriptRunsChanged() { _runsRevision = -1; }
+
+    private void ReadScriptDefinitions()
+    {
+        _scriptDefinitions = AutoRunScriptService.List();
+        _scriptCatalogErrors = AutoRunScriptService.CatalogErrors;
+        _catalogRevision = AutoRunScriptService.CatalogRevision;
+        _scriptFilterDirty = true;
+    }
 
     private void RefreshScriptDefinitions()
     {
         try
         {
             AutoRunScriptService.Refresh();
-            _scriptDefinitions = AutoRunScriptService.List();
+            ReadScriptDefinitions();
             _scriptWindowError = null;
             RefreshScriptRuns();
         }
@@ -46,12 +79,23 @@ public partial class AutoRunWindow
     {
         if (EditorApplication.timeSinceStartup - _scriptLastPoll < 0.5) return;
         _scriptLastPoll = EditorApplication.timeSinceStartup;
-        RefreshScriptRuns();
-        if (AutoRunScriptService.HasActiveRun || _scriptRuns.Count > 0) Repaint();
+        bool changed = false;
+        if (_catalogRevision != AutoRunScriptService.CatalogRevision)
+        {
+            ReadScriptDefinitions();
+            changed = true;
+        }
+        if (_runsRevision != AutoRunScriptService.RunsRevision || AutoRunScriptService.HasActiveRun)
+        {
+            RefreshScriptRuns();
+            changed = true;
+        }
+        if (changed) Repaint();
     }
     private void RefreshScriptRuns()
     {
-        _scriptRuns = AutoRunScriptService.ListRuns().OrderByDescending(run => run.StartedAt).ToList();
+        _scriptRuns = AutoRunScriptService.ListRuns();
+        _runsRevision = AutoRunScriptService.RunsRevision;
     }
 
     private void RenderScriptPanel()
@@ -61,14 +105,15 @@ public partial class AutoRunWindow
         header.Add(180);
         _scriptSearch = EditorGUILayout.TextField(_scriptSearch ?? "", GUILayout.MinWidth(0), GUILayout.ExpandWidth(true));
         header.Add(95);
-        _scriptKindFilter = EditorGUILayout.Popup(_scriptKindFilter, new[] { "All", "Business", "Basic" }, GUILayout.Width(95));
+        _scriptKindFilter = EditorGUILayout.Popup(_scriptKindFilter, ScriptKindLabels, GUILayout.Width(95));
         header.Add(70);
         if (GUILayout.Button("Refresh", GUILayout.Width(70))) RefreshScriptDefinitions();
         header.End();
 
         if (!string.IsNullOrEmpty(_scriptWindowError)) EditorGUILayout.HelpBox(_scriptWindowError, MessageType.Error);
-        foreach (string error in AutoRunScriptService.CatalogErrors) EditorGUILayout.HelpBox(error, MessageType.Error);
-        List<AutoRunScriptDefinition> filtered = _scriptDefinitions.Where(MatchesScriptFilter).ToList();
+        foreach (string error in _scriptCatalogErrors) EditorGUILayout.HelpBox(error, MessageType.Error);
+        UpdateScriptFilter();
+        List<AutoRunScriptDefinition> filtered = _filteredScripts;
         if (filtered.Count == 0)
         {
             GUILayout.Label("No matching scripts. Use gen-script to create a business script.", GetWrappedStyle(EditorStyles.miniLabel));
@@ -77,12 +122,34 @@ public partial class AutoRunWindow
         {
             int index = filtered.FindIndex(definition => definition.Id == _selectedScriptId);
             if (index < 0) index = 0;
-            index = EditorGUILayout.Popup("Script", index, filtered.Select(definition => definition.Name + " [" + definition.Id + "]").ToArray());
-            _selectedScriptId = filtered[index].Id;
+            index = EditorGUILayout.Popup("Script", index, _scriptLabels);
+            if (_selectedScriptId != filtered[index].Id)
+            {
+                _selectedScriptId = filtered[index].Id;
+                _showScriptDetails = false;
+                _showScriptRunOptions = false;
+            }
             RenderScriptDetails(filtered[index]);
         }
         RenderRecentScriptRuns();
         EndPanel();
+    }
+    private void UpdateScriptFilter()
+    {
+        if (!_scriptFilterDirty && _cachedScriptSearch == _scriptSearch && _cachedScriptKind == _scriptKindFilter) return;
+        _filteredScripts.Clear();
+        foreach (AutoRunScriptDefinition definition in _scriptDefinitions)
+            if (MatchesScriptFilter(definition)) _filteredScripts.Add(definition);
+        _scriptLabels = _filteredScripts.Select(definition => definition.Name).ToArray();
+        for (int index = 0; index < _filteredScripts.Count; index++)
+        {
+            AutoRunScriptDefinition definition = _filteredScripts[index];
+            if (_filteredScripts.Count(item => item.Name == definition.Name) > 1)
+                _scriptLabels[index] = definition.Name + " [" + definition.Id + "]";
+        }
+        _cachedScriptSearch = _scriptSearch;
+        _cachedScriptKind = _scriptKindFilter;
+        _scriptFilterDirty = false;
     }
     private bool MatchesScriptFilter(AutoRunScriptDefinition definition)
     {
@@ -94,10 +161,28 @@ public partial class AutoRunWindow
     }
     private void RenderScriptDetails(AutoRunScriptDefinition definition)
     {
+        if (!string.IsNullOrEmpty(definition.ValidationError)) EditorGUILayout.HelpBox(definition.ValidationError, MessageType.Error);
+        using (new EditorGUI.DisabledScope(AutoRunScriptService.HasActiveRun || EditorApplication.isCompiling
+            || EditorApplication.isUpdating || !string.IsNullOrEmpty(definition.ValidationError)))
+        {
+            if (GUILayout.Button("Run Script", GUILayout.Width(100))) StartSelectedScript(definition);
+        }
+        _showScriptRunOptions = EditorGUILayout.Foldout(_showScriptRunOptions, "Run Options", true);
+        if (_showScriptRunOptions)
+        {
+            GUILayout.Label("Parameters JSON (string values)", EditorStyles.miniBoldLabel);
+            _scriptParametersJson = EditorGUILayout.TextArea(_scriptParametersJson, GUILayout.MinHeight(48), GUILayout.ExpandWidth(true));
+            _scriptEnsurePlayMode = EditorGUILayout.Toggle("Ensure Play Mode", _scriptEnsurePlayMode);
+            _scriptTimeoutSeconds = EditorGUILayout.DoubleField("Timeout (seconds)", _scriptTimeoutSeconds);
+        }
+        int dependencyCount = definition.Dependencies == null ? 0 : definition.Dependencies.Length;
+        _showScriptDetails = EditorGUILayout.Foldout(_showScriptDetails,
+            dependencyCount == 0 ? "Script Details" : "Script Details (" + dependencyCount + " dependencies)", true);
+        if (!_showScriptDetails) return;
+
         GUILayout.Label(definition.Kind + " | " + definition.Id, EditorStyles.miniBoldLabel);
         if (!string.IsNullOrEmpty(definition.Description)) GUILayout.Label(definition.Description, GetWrappedStyle(EditorStyles.label));
         GUILayout.Label("Starting state: " + (definition.Preconditions ?? "None declared"), GetWrappedStyle(EditorStyles.miniLabel));
-        if (!string.IsNullOrEmpty(definition.ValidationError)) EditorGUILayout.HelpBox(definition.ValidationError, MessageType.Error);
         ResponsiveRow source = BeginResponsiveRow();
         source.Add(190);
         GUILayout.Label(definition.SourcePath ?? definition.ClassName, GetWrappedStyle(EditorStyles.miniLabel), GUILayout.MinWidth(0), GUILayout.ExpandWidth(true));
@@ -114,19 +199,6 @@ public partial class AutoRunWindow
         string[] callers = _scriptDefinitions.Where(item => item.Dependencies != null && item.Dependencies.Contains(definition.Id))
             .Select(item => item.Name + " [" + item.Id + "]").ToArray();
         GUILayout.Label("Called by: " + (callers.Length == 0 ? "None" : string.Join(", ", callers)), GetWrappedStyle(EditorStyles.miniLabel));
-        GUILayout.Label("Parameters JSON (string values)", EditorStyles.miniBoldLabel);
-        _scriptParametersJson = EditorGUILayout.TextArea(_scriptParametersJson, GUILayout.MinHeight(48), GUILayout.ExpandWidth(true));
-        _scriptEnsurePlayMode = EditorGUILayout.Toggle("Ensure Play Mode", _scriptEnsurePlayMode);
-        _scriptTimeoutSeconds = EditorGUILayout.DoubleField("Timeout (seconds)", _scriptTimeoutSeconds);
-
-        ResponsiveRow actions = BeginResponsiveRow();
-        actions.Add(100);
-        using (new EditorGUI.DisabledScope(AutoRunScriptService.HasActiveRun || EditorApplication.isCompiling
-            || EditorApplication.isUpdating || !string.IsNullOrEmpty(definition.ValidationError)))
-        {
-            if (GUILayout.Button("Run Script", GUILayout.Width(100))) StartSelectedScript(definition);
-        }
-        actions.Add(100);
         string deleteReason;
         bool canDelete = AutoRunScriptService.CanDelete(definition.Id, out deleteReason);
         using (new EditorGUI.DisabledScope(!canDelete))
@@ -134,7 +206,6 @@ public partial class AutoRunWindow
             if (GUILayout.Button(new GUIContent("Delete", deleteReason ?? "Delete this business script source"), GUILayout.Width(100)))
                 DeleteBusinessScript(definition);
         }
-        actions.End();
         GUILayout.Label("Completion, failure, and cancellation preserve Play Mode and the current game state.", GetWrappedStyle(EditorStyles.miniLabel));
     }
 
@@ -161,6 +232,7 @@ public partial class AutoRunWindow
     {
         try
         {
+            _scriptWindowError = null;
             if (double.IsNaN(_scriptTimeoutSeconds) || double.IsInfinity(_scriptTimeoutSeconds) || _scriptTimeoutSeconds <= 0)
                 throw new InvalidOperationException("Timeout must be a positive finite number.");
             var source = AutoRunJsonParser.Parse(_scriptParametersJson) as Dictionary<string, object>;
@@ -177,7 +249,11 @@ public partial class AutoRunWindow
                 status.State == AutoRunScriptRunState.Failed ? AutoRunLogLevel.Error : AutoRunLogLevel.Info);
             RefreshScriptRuns();
         }
-        catch (Exception exception) { AppendConsoleText("Script start failed: " + exception.Message, AutoRunLogLevel.Error); }
+        catch (Exception exception)
+        {
+            _scriptWindowError = "Script start failed: " + exception.Message;
+            AppendConsoleText(_scriptWindowError, AutoRunLogLevel.Error);
+        }
     }
 
     private static string GetScriptAssetPath(string path)
@@ -210,22 +286,37 @@ public partial class AutoRunWindow
     private void RenderRecentScriptRuns()
     {
         GUILayout.Space(6);
-        GUILayout.Label("Recent Results", EditorStyles.boldLabel);
         if (_scriptRuns.Count == 0) { GUILayout.Label("No runs in this editor session.", EditorStyles.miniLabel); return; }
-        foreach (AutoRunScriptRunStatus run in _scriptRuns.Take(8))
-        {
-            if (GUILayout.Button(run.ScriptId + " | " + run.State + " | " + run.Code, GetWrappedStyle(GUI.skin.button)))
-                _selectedScriptRunId = run.RunId;
-        }
-        AutoRunScriptRunStatus selected = _scriptRuns.Find(run => run.RunId == _selectedScriptRunId) ?? _scriptRuns[0];
-        GUILayout.Label(selected.RunId + " | " + selected.State + " | " + selected.ElapsedSeconds.ToString("0.0") + "s", GetWrappedStyle(EditorStyles.miniLabel));
-        GUILayout.Label(selected.Message ?? "", GetWrappedStyle(EditorStyles.label));
+        AutoRunScriptRunStatus selected = _scriptRuns.Find(run => !run.IsTerminal)
+            ?? _scriptRuns.Find(run => run.RunId == _selectedScriptRunId) ?? _scriptRuns[0];
+        AutoRunScriptDefinition definition = _scriptDefinitions.Find(item => item.Id == selected.ScriptId);
+        GUILayout.Label((definition == null ? selected.ScriptId : definition.Name) + " | " + selected.State
+            + " | " + selected.ElapsedSeconds.ToString("0.0") + "s", GetWrappedStyle(EditorStyles.miniBoldLabel));
+        string message = selected.Message ?? "";
+        string summary = message.Replace('\r', ' ').Replace('\n', ' ');
+        if (summary.Length > 100) summary = summary.Substring(0, 100) + "…";
+        GUILayout.Label(new GUIContent(summary, message), EditorStyles.miniLabel);
         if (!selected.IsTerminal && GUILayout.Button("Cancel Run"))
         {
+            _selectedScriptRunId = selected.RunId;
             AutoRunScriptService.Cancel(selected.RunId);
             AppendConsoleText("Cancellation requested: " + selected.RunId);
             RefreshScriptRuns();
         }
+        _showScriptHistory = EditorGUILayout.Foldout(_showScriptHistory, "Recent Runs (" + _scriptRuns.Count + ")", true);
+        if (_showScriptHistory)
+        {
+            foreach (AutoRunScriptRunStatus run in _scriptRuns.Take(8))
+            {
+                AutoRunScriptDefinition script = _scriptDefinitions.Find(item => item.Id == run.ScriptId);
+                if (GUILayout.Button((script == null ? run.ScriptId : script.Name) + " | " + run.State, GetWrappedStyle(GUI.skin.button)))
+                    _selectedScriptRunId = run.RunId;
+            }
+        }
+        _showScriptRunDetails = EditorGUILayout.Foldout(_showScriptRunDetails, "Result Details", true);
+        if (!_showScriptRunDetails) return;
+        GUILayout.Label(selected.RunId + " | " + selected.Code, GetWrappedStyle(EditorStyles.miniLabel));
+        GUILayout.Label(message, GetWrappedStyle(EditorStyles.label));
         foreach (AutoRunScriptInvocation call in selected.Calls)
             GUILayout.Label(new string(' ', call.Depth * 2) + call.ScriptId + " | " + call.State + " | " + call.Message, GetWrappedStyle(EditorStyles.miniLabel));
         foreach (string artifact in selected.Artifacts)

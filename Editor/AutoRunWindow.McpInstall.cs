@@ -7,6 +7,7 @@ public partial class AutoRunWindow
 {
     private const string McpInstallTargetKey = "UnityAutorunTool.McpInstallTarget";
     private string _mcpInstallTargetPath;
+    [SerializeField] private bool _showMcpSettings;
 
     private void RenderMcpInstallControls()
     {
@@ -98,6 +99,7 @@ public partial class AutoRunWindow
             string message;
             bool published = McpPublishService.PublishCurrentVersion(out message, out bool reconnectPending);
             RefreshMcpProcesses();
+            _mcpVersionRefreshRequested = true;
 
             if (published)
             {
@@ -168,28 +170,21 @@ public partial class AutoRunWindow
 
     private void RenderMcpPanel()
     {
-        BeginPanel("MCP");
-        ResponsiveRow header = BeginResponsiveRow();
-        header.Add(170f);
-        GUILayout.Label(
-            new GUIContent(
-                "Unity AutoRun MCP + Skills",
-                "The package version is read from package.json."),
-            EditorStyles.miniLabel,
-            GUILayout.MinWidth(0),
-            GUILayout.ExpandWidth(true));
-        header.Add(95f);
-        GUILayout.FlexibleSpace();
-        GUILayout.Label(
-            "package v" + McpInstallConfig.GetToolVersion(),
-            EditorStyles.miniBoldLabel,
-            GUILayout.Width(95f));
-        header.End();
-        GUILayout.Space(2);
-
-        if (EditorApplication.timeSinceStartup - _mcpProcessLastRefreshAt > 2)
+        BeginPanel("Connection");
+        GUILayout.Label("Bridge " + (AutoRunBridgeController.IsRunning ? "Running" : "Stopped")
+            + " | v" + McpInstallConfig.GetToolVersion(), EditorStyles.miniLabel);
+        bool wasOpen = _showMcpSettings;
+        _showMcpSettings = EditorGUILayout.Foldout(_showMcpSettings, "MCP Settings & Diagnostics", true);
+        if (_showMcpSettings && !wasOpen)
         {
             RefreshMcpProcesses();
+            _mcpVersionRefreshRequested = true;
+            InvalidateSkillInstallStatus();
+        }
+        if (!_showMcpSettings)
+        {
+            EndPanel();
+            return;
         }
 
         GUILayout.Label("Bridge");

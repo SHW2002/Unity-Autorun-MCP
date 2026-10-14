@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
-using System.Text.RegularExpressions;
 using UnityEditor;
 using UnityEngine;
 
@@ -16,8 +15,20 @@ namespace UnityAutorun.Scripting
         private static readonly List<AutoRunScriptDefinition> Definitions = new List<AutoRunScriptDefinition>();
         private static readonly Dictionary<string, StoredRequest> Requests = new Dictionary<string, StoredRequest>(StringComparer.Ordinal);
         private static readonly List<string> Errors = new List<string>();
+        private static readonly AutoRunScriptSourceResolver Sources = new AutoRunScriptSourceResolver();
+        private static readonly Dictionary<Type, CatalogEntry> Metadata = new Dictionary<Type, CatalogEntry>();
+        private static readonly List<StoredRequest> RecentRequests = new List<StoredRequest>();
+        private static readonly Dictionary<string, StoredRequest> LatestRequests = new Dictionary<string, StoredRequest>(StringComparer.Ordinal);
         private static AutoRunScriptRunner _runner;
+        private static StoredRequest _activeRequest;
         private static bool _initialized;
+        private static bool _refreshing;
+        private static bool _catalogDirty;
+        private static double _nextCatalogRefreshAt;
+        private static long _catalogRevision;
+        private static long _runsRevision;
+        private static string _catalogSignature;
+        private static RunPresentation _runPresentation;
         private static double _lastSessionSaveAt;
         private static string SessionKey { get { return "UnityAutorunTool.Scripts." + Application.dataPath; } }
 
@@ -27,15 +38,26 @@ namespace UnityAutorun.Scripting
             EditorApplication.update += Pump;
             AssemblyReloadEvents.beforeAssemblyReload += BeforeAssemblyReload;
             EditorApplication.playModeStateChanged += OnPlayModeChanged;
+            EditorApplication.projectChanged += InvalidateCatalog;
         }
 
-        public static bool HasActiveRun { get { EnsureInitialized(); return Requests.Values.Any(request => !request.Status.IsTerminal); } }
+        public static event Action CatalogChanged;
+        public static event Action RunsChanged;
+        public static long CatalogRevision { get { EnsureInitialized(); return _catalogRevision; } }
+        public static long RunsRevision { get { EnsureInitialized(); return _runsRevision; } }
+        public static bool HasActiveRun { get { EnsureInitialized(); return _activeRequest != null && !_activeRequest.Status.IsTerminal; } }
         public static List<string> CatalogErrors { get { EnsureInitialized(); return new List<string>(Errors); } }
         public static List<AutoRunScriptDefinition> List() { EnsureInitialized(); return new List<AutoRunScriptDefinition>(Definitions); }
         public static List<AutoRunScriptRunStatus> ListRuns()
         {
             EnsureInitialized();
-            return Requests.Values.Select(request => request.Status).OrderByDescending(status => status.StartedAt).Take(MaximumHistory).ToList();
+            return RecentRequests.Select(request => request.Status).ToList();
+        }
+        public static AutoRunScriptRunStatus GetLatestStatus(string scriptId)
+        {
+            EnsureInitialized();
+            StoredRequest request;
+            return scriptId != null && LatestRequests.TryGetValue(scriptId, out request) ? request.Status : null;
         }
 
         private static void EnsureInitialized() { if (!_initialized) Initialize(); }
@@ -52,47 +74,83 @@ namespace UnityAutorun.Scripting
             _runner = new AutoRunScriptRunner(new AutoRunScriptDefinition[0], new AutoRunUnityScriptHost(), () => EditorApplication.timeSinceStartup);
             RestoreRequests();
             Refresh();
+            if (Requests.Count > 0) NotifyRunsChanged();
         }
 
         public static void Refresh()
         {
-            EnsureInitialized();
-            Definitions.Clear();
-            Errors.Clear();
-            List<SourceEntry> sources = ReadSources();
-            foreach (Type type in TypeCache.GetTypesDerivedFrom<AutoRunScript>().OrderBy(value => value.FullName, StringComparer.Ordinal))
+            // Initialize already builds the catalog. Do not scan it a second time for
+            // the very first external Refresh call.
+            if (!_initialized) { Initialize(); return; }
+            if (_refreshing) return;
+            _refreshing = true;
+            try
             {
-                if (type.IsAbstract) continue;
-                var attribute = Attribute.GetCustomAttribute(type, typeof(AutoRunScriptAttribute), false) as AutoRunScriptAttribute;
-                if (attribute == null) { Errors.Add("Script is missing AutoRunScriptAttribute: " + type.FullName); continue; }
-                var definition = new AutoRunScriptDefinition
+                Definitions.Clear();
+                Errors.Clear();
+                Sources.BeginRefresh();
+                foreach (Type type in TypeCache.GetTypesDerivedFrom<AutoRunScript>().OrderBy(value => value.FullName, StringComparer.Ordinal))
                 {
-                    Id = attribute.Id, Name = attribute.Name, Kind = attribute.Kind,
-                    Description = attribute.Description, Preconditions = attribute.Preconditions,
-                    Dependencies = attribute.Dependencies == null ? new string[0] : (string[])attribute.Dependencies.Clone(),
-                    ClassName = type.FullName, SourcePath = FindSource(type, sources)
-                };
-                if (string.IsNullOrWhiteSpace(definition.Id)) definition.ValidationError = "Script ID is required: " + type.FullName;
-                else if (string.IsNullOrWhiteSpace(definition.Name)) definition.ValidationError = "Script display name is required: " + definition.Id;
-                else if (type.ContainsGenericParameters || type.GetConstructor(Type.EmptyTypes) == null)
-                    definition.ValidationError = "Script requires a public parameterless constructor: " + definition.Id;
-                else if (definition.Kind == AutoRunScriptKind.Business
-                    && (string.IsNullOrWhiteSpace(definition.Preconditions)
-                        || type.GetMethod(nameof(AutoRunScript.CheckPreconditions)).DeclaringType == typeof(AutoRunScript)))
-                    definition.ValidationError = "Business scripts must declare Preconditions and override CheckPreconditions: " + definition.Id;
-                if (definition.ValidationError == null) definition.Factory = () => (AutoRunScript)Activator.CreateInstance(type);
-                Definitions.Add(definition);
+                    if (type.IsAbstract) continue;
+                    CatalogEntry entry;
+                    if (!Metadata.TryGetValue(type, out entry))
+                    {
+                        entry = ReadMetadata(type);
+                        Metadata.Add(type, entry);
+                    }
+                    if (entry.Definition == null) { Errors.Add(entry.RegistrationError); continue; }
+                    AutoRunScriptDefinition definition = entry.Definition;
+                    definition.ValidationError = entry.RegistrationError;
+                    definition.SourcePath = Sources.Resolve(type);
+                    Definitions.Add(definition);
+                }
+                _runner.SetDefinitions(Definitions);
+                var graphErrors = Definitions.Select(definition => string.IsNullOrWhiteSpace(definition.Id)
+                    ? definition.ValidationError : _runner.Validate(definition.Id)).ToArray();
+                for (int index = 0; index < Definitions.Count; index++)
+                {
+                    if (graphErrors[index] == null) continue;
+                    Definitions[index].ValidationError = graphErrors[index];
+                    Errors.Add(Definitions[index].Id + ": " + graphErrors[index]);
+                }
+                _catalogDirty = false;
+                string signature = JsonUtility.ToJson(new CatalogSnapshot { Definitions = Definitions, Errors = Errors });
+                if (_catalogSignature != signature)
+                {
+                    _catalogSignature = signature;
+                    _catalogRevision++;
+                    Notify(CatalogChanged);
+                }
             }
-            _runner.SetDefinitions(Definitions);
-            // Evaluate against original registration errors, then publish all graph errors together.
-            var graphErrors = Definitions.Select(definition => string.IsNullOrWhiteSpace(definition.Id)
-                ? definition.ValidationError : _runner.Validate(definition.Id)).ToArray();
-            for (int index = 0; index < Definitions.Count; index++)
+            finally { _refreshing = false; }
+        }
+
+        private static CatalogEntry ReadMetadata(Type type)
+        {
+            var attribute = Attribute.GetCustomAttribute(type, typeof(AutoRunScriptAttribute), false) as AutoRunScriptAttribute;
+            if (attribute == null) return new CatalogEntry { RegistrationError = "Script is missing AutoRunScriptAttribute: " + type.FullName };
+            var definition = new AutoRunScriptDefinition
             {
-                if (graphErrors[index] == null) continue;
-                Definitions[index].ValidationError = graphErrors[index];
-                Errors.Add(Definitions[index].Id + ": " + graphErrors[index]);
-            }
+                Id = attribute.Id, Name = attribute.Name, Kind = attribute.Kind,
+                Description = attribute.Description, Preconditions = attribute.Preconditions,
+                Dependencies = attribute.Dependencies == null ? new string[0] : (string[])attribute.Dependencies.Clone(), ClassName = type.FullName
+            };
+            string error = null;
+            if (string.IsNullOrWhiteSpace(definition.Id)) error = "Script ID is required: " + type.FullName;
+            else if (string.IsNullOrWhiteSpace(definition.Name)) error = "Script display name is required: " + definition.Id;
+            else if (type.ContainsGenericParameters || type.GetConstructor(Type.EmptyTypes) == null)
+                error = "Script requires a public parameterless constructor: " + definition.Id;
+            else if (definition.Kind == AutoRunScriptKind.Business
+                && (string.IsNullOrWhiteSpace(definition.Preconditions)
+                    || type.GetMethod(nameof(AutoRunScript.CheckPreconditions)).DeclaringType == typeof(AutoRunScript)))
+                error = "Business scripts must declare Preconditions and override CheckPreconditions: " + definition.Id;
+            if (error == null) definition.Factory = () => (AutoRunScript)Activator.CreateInstance(type);
+            return new CatalogEntry { Definition = definition, RegistrationError = error };
+        }
+
+        private static void InvalidateCatalog()
+        {
+            _catalogDirty = true;
         }
 
         public static AutoRunScriptRunStatus Start(string scriptId, Dictionary<string, string> parameters = null,
@@ -123,6 +181,8 @@ namespace UnityAutorun.Scripting
                     Code = "pending", Message = "Waiting to start.", StartedAt = EditorApplication.timeSinceStartup }
             };
             Requests.Add(runId, request);
+            RememberRecent(request);
+            _activeRequest = request;
             string validation = _runner.Validate(scriptId);
             if (validation != null) FailPending(request, "script_validation_failed", validation);
             else if (ensurePlayMode && !EditorApplication.isPlaying)
@@ -134,6 +194,7 @@ namespace UnityAutorun.Scripting
             }
             else StartReady(request);
             SaveRequests();
+            NotifyRunsChanged();
             return request.Status;
         }
 
@@ -160,6 +221,7 @@ namespace UnityAutorun.Scripting
             }
             else request.Status = _runner.Cancel(runId);
             SaveRequests();
+            NotifyRunsChanged();
             return request.Status;
         }
 
@@ -179,6 +241,8 @@ namespace UnityAutorun.Scripting
             // A source file can contain several registered script classes; never delete another script accidentally.
             if (Definitions.Any(value => value.Id != scriptId && value.SourcePath == definition.SourcePath))
             { reason = "This source file contains multiple registered scripts; edit it directly."; return false; }
+            if (!Sources.IsSingleClassFile(definition.SourcePath))
+            { reason = "Source ownership is ambiguous or the file declares multiple classes; edit it directly."; return false; }
             reason = null;
             return true;
         }
@@ -187,27 +251,31 @@ namespace UnityAutorun.Scripting
         {
             if (!_initialized) return;
             double now = EditorApplication.timeSinceStartup;
-            bool pendingChanged = false;
-            foreach (StoredRequest request in Requests.Values.ToArray())
+            if (_catalogDirty && now >= _nextCatalogRefreshAt && !EditorApplication.isCompiling && !EditorApplication.isUpdating)
             {
-                if (request.Status.IsTerminal || request.Status.State != AutoRunScriptRunState.Pending) continue;
+                _nextCatalogRefreshAt = now + 0.5;
+                Refresh();
+            }
+            StoredRequest request = _activeRequest;
+            if (request == null || request.Status.IsTerminal) return;
+            if (request.Status.State == AutoRunScriptRunState.Pending)
+            {
                 request.Status.ElapsedSeconds = Math.Max(0, now - request.Status.StartedAt);
                 if (request.Status.ElapsedSeconds >= request.Timeout)
                 {
                     FailPending(request, "script_start_timeout", "Play Mode startup exceeded the script timeout.", AutoRunScriptRunState.TimedOut);
-                    pendingChanged = true;
                 }
                 else if (request.WaitingForPlayMode && EditorApplication.isPlaying && !EditorApplication.isCompiling && !EditorApplication.isUpdating)
                     StartReady(request);
             }
-            if (_runner.HasActiveRuns)
+            if (request.Status.State == AutoRunScriptRunState.Running)
             {
                 if (EditorApplication.isCompiling) _runner.FailAll("script_compilation", "Unity started recompiling during script execution; execution was terminated without restarting steps.");
                 else _runner.Tick(now);
                 SyncRunnerStatuses();
-                if (!_runner.HasActiveRuns || now - _lastSessionSaveAt >= 1) SaveRequests();
             }
-            else if (pendingChanged) SaveRequests();
+            if (!_runPresentation.Equals(new RunPresentation(request.Status))) NotifyRunsChanged();
+            if (request.Status.IsTerminal || now - _lastSessionSaveAt >= 1) SaveRequests();
         }
 
         private static void StartReady(StoredRequest request)
@@ -237,6 +305,7 @@ namespace UnityAutorun.Scripting
             if (!_initialized) return;
             _runner.FailAll("script_domain_reload", "Unity reloaded assemblies during script execution; the run was terminated and side-effecting steps will not be replayed.");
             SyncRunnerStatuses();
+            if (_activeRequest != null) NotifyRunsChanged();
             SaveRequests();
         }
 
@@ -247,24 +316,25 @@ namespace UnityAutorun.Scripting
             {
                 _runner.FailAll("play_mode_exited", "Play Mode is exiting during script execution; the run was terminated without restarting steps.");
                 SyncRunnerStatuses();
+                if (_activeRequest != null) NotifyRunsChanged();
                 SaveRequests();
             }
             else if (state == PlayModeStateChange.EnteredEditMode)
             {
-                foreach (StoredRequest request in Requests.Values)
-                    if (request.WaitingForPlayMode && !request.Status.IsTerminal)
-                        FailPending(request, "play_mode_start_failed", "Unity returned to Edit Mode before the script could start.");
+                if (_activeRequest != null && _activeRequest.WaitingForPlayMode && !_activeRequest.Status.IsTerminal)
+                {
+                    FailPending(_activeRequest, "play_mode_start_failed", "Unity returned to Edit Mode before the script could start.");
+                    NotifyRunsChanged();
+                }
                 SaveRequests();
             }
         }
 
         private static void SyncRunnerStatuses()
         {
-            foreach (StoredRequest request in Requests.Values)
-            {
-                AutoRunScriptRunStatus status = _runner.GetStatus(request.RunId);
-                if (status != null) request.Status = status;
-            }
+            if (_activeRequest == null) return;
+            AutoRunScriptRunStatus status = _runner.GetStatus(_activeRequest.RunId);
+            if (status != null) _activeRequest.Status = status;
         }
 
         private static void FailPending(StoredRequest request, string code, string message, AutoRunScriptRunState state = AutoRunScriptRunState.Failed)
@@ -306,40 +376,80 @@ namespace UnityAutorun.Scripting
                     if (!request.Status.IsTerminal && !(request.Status.State == AutoRunScriptRunState.Pending && request.WaitingForPlayMode))
                         FailPending(request, "script_domain_reload", "Script execution cannot resume after an assembly reload; steps were not replayed.");
                 }
+                foreach (StoredRequest request in Requests.Values.OrderByDescending(value => value.Status.StartedAt))
+                {
+                    if (RecentRequests.Count < MaximumHistory) RecentRequests.Add(request);
+                    if (request.ScriptId != null && !LatestRequests.ContainsKey(request.ScriptId)) LatestRequests.Add(request.ScriptId, request);
+                    if (!request.Status.IsTerminal)
+                    {
+                        if (_activeRequest == null) _activeRequest = request;
+                        else FailPending(request, "script_session_conflict", "Multiple pending runs were found in the session; only the latest initial startup request may resume.");
+                    }
+                }
             }
             catch (Exception exception) { Debug.LogError("AutoRun script session could not be restored: " + exception.Message); }
         }
 
-        private static List<SourceEntry> ReadSources()
+        private static void RememberRecent(StoredRequest request)
         {
-            var sources = new List<SourceEntry>();
-            foreach (string guid in AssetDatabase.FindAssets("t:MonoScript"))
-            {
-                string assetPath = AssetDatabase.GUIDToAssetPath(guid);
-                MonoScript script = AssetDatabase.LoadAssetAtPath<MonoScript>(assetPath);
-                if (script == null) continue;
-                string path = assetPath;
-                if (assetPath.StartsWith("Packages/", StringComparison.Ordinal))
-                {
-                    UnityEditor.PackageManager.PackageInfo package = UnityEditor.PackageManager.PackageInfo.FindForAssetPath(assetPath);
-                    if (package != null) path = Path.Combine(package.resolvedPath, assetPath.Substring(package.assetPath.Length).TrimStart('/', '\\'));
-                }
-                if (!Path.IsPathRooted(path)) path = Path.Combine(Path.GetFullPath(Path.Combine(Application.dataPath, "..")), path);
-                sources.Add(new SourceEntry { Type = script.GetClass(), Path = Path.GetFullPath(path), Text = script.text });
-            }
-            return sources;
-        }
-        private static string FindSource(Type type, List<SourceEntry> sources)
-        {
-            SourceEntry direct = sources.FirstOrDefault(source => source.Type == type);
-            if (direct != null) return direct.Path;
-            var pattern = new Regex(@"\bclass\s+" + Regex.Escape(type.Name) + @"\b");
-            SourceEntry[] matches = sources.Where(source => pattern.IsMatch(source.Text ?? string.Empty)
-                && (string.IsNullOrEmpty(type.Namespace) || Regex.IsMatch(source.Text ?? string.Empty, @"\bnamespace\s+" + Regex.Escape(type.Namespace) + @"\b"))).ToArray();
-            return matches.Length == 1 ? matches[0].Path : null;
+            int index = 0;
+            while (index < RecentRequests.Count && RecentRequests[index].Status.StartedAt > request.Status.StartedAt) index++;
+            RecentRequests.Insert(index, request);
+            if (RecentRequests.Count > MaximumHistory) RecentRequests.RemoveAt(RecentRequests.Count - 1);
+            if (request.ScriptId != null) LatestRequests[request.ScriptId] = request;
         }
 
-        private sealed class SourceEntry { public Type Type; public string Path; public string Text; }
+        private static void NotifyRunsChanged()
+        {
+            if (_activeRequest != null && _activeRequest.Status.IsTerminal) _activeRequest = null;
+            _runPresentation = _activeRequest == null ? default(RunPresentation) : new RunPresentation(_activeRequest.Status);
+            _runsRevision++;
+            Notify(RunsChanged);
+        }
+
+        private static void Notify(Action handlers)
+        {
+            if (handlers == null) return;
+            foreach (Action handler in handlers.GetInvocationList())
+            {
+                try { handler(); }
+                catch (Exception exception) { Debug.LogException(exception); }
+            }
+        }
+
+        private sealed class CatalogEntry { public AutoRunScriptDefinition Definition; public string RegistrationError; }
+        [Serializable] private sealed class CatalogSnapshot
+        {
+            public List<AutoRunScriptDefinition> Definitions;
+            public List<string> Errors;
+        }
+        private struct RunPresentation : IEquatable<RunPresentation>
+        {
+            private readonly string _runId;
+            private readonly AutoRunScriptRunState _state;
+            private readonly string _code;
+            private readonly string _message;
+            private readonly int _logCount;
+            private readonly string _lastLog;
+            private readonly int _artifactCount;
+            private readonly int _callCount;
+            private readonly int _stackDepth;
+            private readonly AutoRunScriptRunState _lastCallState;
+
+            public RunPresentation(AutoRunScriptRunStatus status)
+            {
+                _runId = status.RunId; _state = status.State; _code = status.Code; _message = status.Message;
+                _logCount = status.Logs.Count; _lastLog = _logCount == 0 ? null : status.Logs[_logCount - 1];
+                _artifactCount = status.Artifacts.Count; _callCount = status.Calls.Count; _stackDepth = status.CallStack.Count;
+                _lastCallState = _callCount == 0 ? default(AutoRunScriptRunState) : status.Calls[_callCount - 1].State;
+            }
+            public bool Equals(RunPresentation other)
+            {
+                return _runId == other._runId && _state == other._state && _code == other._code && _message == other._message
+                    && _logCount == other._logCount && _lastLog == other._lastLog && _artifactCount == other._artifactCount
+                    && _callCount == other._callCount && _stackDepth == other._stackDepth && _lastCallState == other._lastCallState;
+            }
+        }
         [Serializable] private sealed class ParameterEntry { public string Key; public string Value; }
         [Serializable] private sealed class StoredRequest
         {

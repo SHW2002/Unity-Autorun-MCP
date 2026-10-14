@@ -16,8 +16,8 @@ Requires Unity 2021.3 or newer, [Git](https://git-scm.com/downloads), and the [.
    ```
 
 3. Wait for import and compilation, then open `Window > Auto Run Window`.
-4. Press `MCP > Tools > Publish MCP` to build the current server.
-5. Under `MCP > Install`, select the project's `.codex` or Claude Code `.claude` directory, then press `Install MCP` and `Install Skills`.
+4. Expand `Connection > MCP Settings & Diagnostics`, then press `Tools > Publish MCP` to build the current server.
+5. Under `Install` in the expanded section, select the project's `.codex` or Claude Code `.claude` directory, then press `Install MCP` and `Install Skills`.
 6. Reconnect the AI client. Confirm `Bridge` is `Running` and `Processes` shows its MCP process. `Versions` displays separate MCP, `gen-script`, and `run-script` versions and installation states.
 
 `Install Skills` installs both independent Skills into `.agents/skills/` beside the selected `.codex` directory, or into `.claude/skills/` for Claude Code. It validates and stages the whole batch before replacing installed versions, rolls back the entire batch on an exchange failure, and refuses to overwrite a newer installed Skill. Existing `unity-autorun` installations are preserved with a manual removal notice so custom changes are not deleted.
@@ -49,6 +49,10 @@ Both Skills allow normal automatic discovery and explicit `$gen-script` or `$run
 ## Editor script management
 
 The `Autorun Scripts` panel includes:
+
+The default view shows script names, the run action, and a short result. Expand `Script Details` for descriptions, starting conditions, sources, and dependencies; `Run Options` for parameters, Play Mode, and timeout; and `Result Details` / `Recent Runs` for calls, logs, artifacts, and history. Errors and cancellation remain visible. MCP settings and Console start collapsed.
+
+The catalog and filtered choices are cached and updated after compilation or an explicit refresh. Focusing the window does not rescan the project, and idle run history does not trigger continuous repaints. Process and binary version queries run in the background; periodic process queries stop while MCP settings are collapsed.
 
 - Business/basic categories, name and ID search, and source opening.
 - Declared starting conditions, nested dependency trees, callers, and missing dependency, duplicate ID, cycle, or registration errors.

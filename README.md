@@ -16,8 +16,8 @@ Unity Autorun Tool 是一个 Unity Editor 自动化工具。外部 AI 根据宿�
    ```
 
 3. 等待包导入和编译完成，打开 `Window > Auto Run Window`。
-4. 在 `MCP > Tools` 点击 `Publish MCP`，生成当前 MCP Server。
-5. 在 `MCP > Install` 点击 `Select`，选择项目 `.codex` 或 Claude Code 项目 `.claude` 文件夹，依次点击 `Install MCP` 和 `Install Skills`。
+4. 展开 `Connection > MCP Settings & Diagnostics`，在 `Tools` 点击 `Publish MCP`，生成当前 MCP Server。
+5. 在展开区的 `Install` 点击 `Select`，选择项目 `.codex` 或 Claude Code 项目 `.claude` 文件夹，依次点击 `Install MCP` 和 `Install Skills`。
 6. 重新连接 AI 客户端，确认 `Bridge` 为 `Running`，`Processes` 显示对应 MCP 进程。`Versions` 分别展示 MCP、`gen-script`、`run-script` 的版本和安装状态。
 
 `Install Skills` 一次安装两个独立 Skill：Codex 安装到所选 `.codex` 同级的 `.agents/skills/`，Claude Code 安装到 `.claude/skills/`。安装器先验证并暂存整批文件，之后备份和替换；任一替换失败会回滚整批，已安装版本高于随包版本时拒绝覆盖。旧的 `unity-autorun` Skill 会保留并提示手动检查、卸载，避免删除用户定制内容。
@@ -49,6 +49,10 @@ $run-script 运行刚才生成的背包脚本，验证最终 UI 状态
 ## 编辑器脚本管理
 
 `Autorun Scripts` 面板提供：
+
+默认只展示脚本名称、运行入口与简短结果。展开 `Script Details` 查看完整描述、起点、源码和依赖树；展开 `Run Options` 配置参数、Play Mode 与超时；展开 `Result Details` / `Recent Runs` 查看调用、日志、产物与历史。错误与取消入口直接可见，MCP 设置及 Console 默认收起。
+
+脚本目录和筛选结果使用缓存，重新编译或显式刷新后更新；切回窗口不会重新扫描全项目。空闲时有历史结果也不会持续重绘。进程和二进制版本查询在后台进行，关闭 MCP 设置区后停止定期进程查询。
 
 - 业务/基础分类、名称和 ID 搜索、来源文件打开。
 - 声明的起点、依赖嵌套树、调用者，以及缺失依赖、重复 ID、循环或注册错误。

@@ -21,7 +21,8 @@ public partial class AutoRunWindow : EditorWindow
     private int _consoleCharCount;
     private bool _consoleViewDirty = true;
     private bool _consoleShouldScrollToBottom;
-    private bool _showDebugLogs = true;
+    private bool _showDebugLogs;
+    [SerializeField] private bool _showConsole;
     private bool _showInfoLogs = true;
     private bool _showWarningLogs = true;
     private bool _showErrorLogs = true;
@@ -48,12 +49,15 @@ public partial class AutoRunWindow : EditorWindow
         LoadMcpInstallTargetPath();
         EnableScriptWindow();
         EnableUpdateCheck();
+        EditorApplication.update -= PollWindowTasks;
+        EditorApplication.update += PollWindowTasks;
     }
 
     private void OnDisable()
     {
         DisableUpdateCheck();
         DisableScriptWindow();
+        EditorApplication.update -= PollWindowTasks;
         SaveWindowScrollPosition();
     }
 
@@ -63,7 +67,6 @@ public partial class AutoRunWindow : EditorWindow
         AutoRunUpdateCheckService.CheckIfDue();
         Repaint();
 
-        RefreshScriptDefinitions();
     }
 
     private void OnGUI()
@@ -83,10 +86,8 @@ public partial class AutoRunWindow : EditorWindow
         }
 
         GUILayout.BeginVertical(GUILayout.Width(GetWindowContentWidth()), GUILayout.ExpandWidth(false));
-        GUILayout.Label("Auto Run Game Utility");
-
-        RenderMcpPanel();
         RenderScriptPanel();
+        RenderMcpPanel();
         RenderConsole();
 
         GUILayout.EndVertical();
@@ -288,7 +289,8 @@ public partial class AutoRunWindow : EditorWindow
 
     private void RenderConsole()
     {
-        GUILayout.Label("Console");
+        _showConsole = EditorGUILayout.Foldout(_showConsole, "Console (" + _consoleEntries.Count + ")", true);
+        if (!_showConsole) return;
         RenderConsoleLevelFilters();
 
         EnsureVisibleConsoleEntries();
