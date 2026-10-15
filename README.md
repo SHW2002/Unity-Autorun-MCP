@@ -134,7 +134,7 @@ public sealed class CheckCurrentUi : AutoRunScript
 | `stop-play-mode` | 明确停止游戏 | 无 |
 | `log` | 记录运行日志 | `message` |
 
-截图默认保存到宿主项目 `AutorunToolData/Screenshots/`。uGUI 按钮必须提供名称或文本，观测到的层级路径/范围用于缩小候选，优先唯一匹配；点击通过当前 `EventSystem` 检查可交互状态及射线命中，再派发 pointer 事件。FairyGUI 仅支持唯一按钮名，不支持文本、路径或范围选择器。
+截图默认保存到宿主项目 `Temp/UnityAutorunTool/Screenshots/`。uGUI 按钮必须提供名称或文本，观测到的层级路径/范围用于缩小候选，优先唯一匹配；点击通过当前 `EventSystem` 检查可交互状态及射线命中，再派发 pointer 事件。FairyGUI 仅支持唯一按钮名，不支持文本、路径或范围选择器。
 
 ## MCP 与 CLI
 

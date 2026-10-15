@@ -175,6 +175,11 @@ public partial class AutoRunWindow
     private void RenderScriptDetails(AutoRunScriptDefinition definition)
     {
         if (!string.IsNullOrEmpty(definition.ValidationError)) EditorGUILayout.HelpBox(definition.ValidationError, MessageType.Error);
+        if (!string.IsNullOrWhiteSpace(definition.ConfigurationMenuPath) && GUILayout.Button("打开配置界面"))
+        {
+            _scriptWindowError = EditorApplication.ExecuteMenuItem(definition.ConfigurationMenuPath)
+                ? null : "Configuration menu could not be opened: " + definition.ConfigurationMenuPath;
+        }
         ResponsiveRow runActions = BeginResponsiveRow();
         runActions.Add(135);
         using (new EditorGUI.DisabledScope(AutoRunScriptService.HasActiveRun || EditorApplication.isCompiling

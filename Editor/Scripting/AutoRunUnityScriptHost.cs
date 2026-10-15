@@ -7,6 +7,8 @@ namespace UnityAutorun.Scripting
 {
     public sealed class AutoRunUnityScriptHost : IAutoRunScriptHost
     {
+        private const int MAX_TEMPORARY_ARTIFACTS = 20;
+        private const int TEMPORARY_ARTIFACT_RETENTION_HOURS = 24;
         public bool IsPlaying { get { return EditorApplication.isPlaying; } }
 
         public AutoRunScriptOperationResult ClickButton(AutoRunScriptButtonSelector selector)
@@ -62,7 +64,7 @@ namespace UnityAutorun.Scripting
             {
                 string root = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
                 string requested = string.IsNullOrWhiteSpace(relativePath)
-                    ? "AutorunToolData/Screenshots/" + DateTime.UtcNow.ToString("yyyyMMdd-HHmmss-fff") + "-" + Guid.NewGuid().ToString("N") + ".png"
+                    ? "Temp/UnityAutorunTool/Screenshots/" + DateTime.UtcNow.ToString("yyyyMMdd-HHmmss-fff") + "-" + Guid.NewGuid().ToString("N") + ".png"
                     : relativePath;
                 if (Path.IsPathRooted(requested)) return AutoRunScriptOperationResult.Failure("invalid_screenshot_path", "Screenshot path must be relative to this Unity project.");
                 string path = Path.GetFullPath(Path.Combine(root, requested));
@@ -71,11 +73,38 @@ namespace UnityAutorun.Scripting
                     || !string.Equals(Path.GetExtension(path), ".png", StringComparison.OrdinalIgnoreCase))
                     return AutoRunScriptOperationResult.Failure("invalid_screenshot_path", "Screenshot must be a .png file inside this Unity project.");
                 if (File.Exists(path)) return AutoRunScriptOperationResult.Failure("screenshot_already_exists", "Screenshot path already exists; choose a new path to avoid stale capture results.");
+                if (string.IsNullOrWhiteSpace(relativePath)) GetTemporaryArtifactDirectory("Screenshots");
                 Directory.CreateDirectory(Path.GetDirectoryName(path));
                 ScreenCapture.CaptureScreenshot(path);
                 return AutoRunScriptOperationResult.Success("Game View capture requested; waiting for the rendered PNG.", path);
             }
             catch (Exception exception) { return AutoRunScriptOperationResult.Failure("screenshot_failed", exception.Message); }
+        }
+
+        /// <summary>Returns a tool-owned Temp directory and makes room for one new artifact; keep up to 20 files for 24 hours.</summary>
+        private static string GetTemporaryArtifactDirectory(string category)
+        {
+            if (string.IsNullOrWhiteSpace(category) || category == "." || category == ".."
+                || category.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 || category.IndexOfAny(new[] { '/', '\\' }) >= 0)
+                throw new ArgumentException("Artifact category must be a single directory name.", nameof(category));
+            string root = Path.GetFullPath(Path.Combine(Application.dataPath, "../Temp/UnityAutorunTool"));
+            string directory = Path.Combine(root, category);
+            // 删除仅限工具自己的临时目录，不跟随链接到工程外部。
+            for (string current = directory; current != null; current = Path.GetDirectoryName(current))
+                if (Directory.Exists(current) && (File.GetAttributes(current) & FileAttributes.ReparsePoint) != 0)
+                    throw new IOException("Temporary artifact directories cannot contain symbolic links.");
+            Directory.CreateDirectory(directory);
+            FileInfo[] files = new DirectoryInfo(directory).GetFiles();
+            Array.Sort(files, (left, right) => right.LastWriteTimeUtc.CompareTo(left.LastWriteTimeUtc));
+            DateTime cutoff = DateTime.UtcNow.AddHours(-TEMPORARY_ARTIFACT_RETENTION_HOURS);
+            for (int index = 0; index < files.Length; index++)
+            {
+                if (index < MAX_TEMPORARY_ARTIFACTS - 1 && files[index].LastWriteTimeUtc >= cutoff) continue;
+                try { files[index].Delete(); }
+                catch (IOException) { }
+                catch (UnauthorizedAccessException) { }
+            }
+            return directory;
         }
 
         public AutoRunScriptOperationResult StopPlayMode()
