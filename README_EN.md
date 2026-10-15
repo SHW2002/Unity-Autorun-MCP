@@ -113,7 +113,7 @@ Declare every `context.Call` target in the attribute's `Dependencies`. Missing d
 | `stop-play-mode` | Explicit game stop | None |
 | `log` | Run log entry | `message` |
 
-Screenshots default to the host project's `AutorunToolData/Screenshots/`. uGUI requires a button name or text, with observed paths/scopes narrowing candidates; prefer unique matches. Clicks check the current `EventSystem`, interactability, and raycast target before dispatching pointer events. FairyGUI supports only a unique button name and rejects text/path/scope selectors.
+Screenshots default to the host project's `Temp/UnityAutorunTool/Screenshots/`. uGUI requires a button name or text, with observed paths/scopes narrowing candidates; prefer unique matches. Clicks check the current `EventSystem`, interactability, and raycast target before dispatching pointer events. FairyGUI supports only a unique button name and rejects text/path/scope selectors.
 
 ## MCP and CLI
 

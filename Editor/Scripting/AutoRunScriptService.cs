@@ -145,6 +145,23 @@ namespace UnityAutorun.Scripting
                 && (string.IsNullOrWhiteSpace(definition.Preconditions)
                     || type.GetMethod(nameof(AutoRunScript.CheckPreconditions)).DeclaringType == typeof(AutoRunScript)))
                 error = "Business scripts must declare Preconditions and override CheckPreconditions: " + definition.Id;
+            if (error == null)
+            {
+                try
+                {
+                    PropertyInfo menuPath = type.GetProperty(nameof(AutoRunScriptDefinition.ConfigurationMenuPath), BindingFlags.Public | BindingFlags.Static);
+                    if (menuPath != null)
+                    {
+                        if (menuPath.PropertyType != typeof(string) || menuPath.GetIndexParameters().Length != 0 || menuPath.GetGetMethod() == null)
+                            error = "ConfigurationMenuPath must be a public static string property with a public getter: " + definition.Id;
+                        else definition.ConfigurationMenuPath = (string)menuPath.GetValue(null, null);
+                    }
+                }
+                catch (Exception exception)
+                {
+                    error = "Script configuration menu could not be read: " + definition.Id + " (" + exception.GetBaseException().Message + ")";
+                }
+            }
             if (error == null) definition.Factory = () => (AutoRunScript)Activator.CreateInstance(type);
             return new CatalogEntry { Definition = definition, RegistrationError = error };
         }

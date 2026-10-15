@@ -13,6 +13,7 @@ namespace UnityAutorun.Scripting
         public AutoRunScriptKind Kind;
         public string Description;
         public string Preconditions;
+        public string ConfigurationMenuPath;
         public bool PreparePlayMode;
         public string[] Dependencies = new string[0];
         public string SourcePath;
