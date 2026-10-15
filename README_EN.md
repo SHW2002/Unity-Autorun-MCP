@@ -4,6 +4,15 @@
 
 Unity Autorun Tool automates Unity Editor workflows using reusable C# business scripts. An external AI reads the host project's sources and runtime evidence, Unity compiles and executes the scripts, and MCP exposes script management, tracked results, UIState, and basic interactions.
 
+## Recent updates (0.3.x)
+
+The current package version is **0.3.4**. Workflows now use compiled C# scripts with explicit starting conditions and observable assertions.
+
+- Three independent Skills cover creation and self-test repairs, maintenance, and execution: `gen-script`, `edit-script`, and `run-script`. Install host `AGENTS.md` rules to check existing scripts before self-testing.
+- The script panel brings together run actions, step logs, and results. Cold-start scripts declaring `PreparePlayMode=true` support `Start Game & Run`; completion and failure preserve the game state.
+- Scripts can declare a host configuration menu and expose an “打开配置界面” (Open configuration) action before a run.
+- Default screenshots use a temporary directory with cleanup on later default captures. Specify a save path when evidence needs to be retained.
+
 ## Quick installation
 
 Requires Unity 2021.3 or newer, [Git](https://git-scm.com/downloads), and the [.NET 8 SDK](https://dotnet.microsoft.com/en-us/download/dotnet/8.0).
@@ -24,6 +33,14 @@ Requires Unity 2021.3 or newer, [Git](https://git-scm.com/downloads), and the [.
 `Install Skills` installs all three independent Skills into `.agents/skills/` beside the selected `.codex` directory, or into `.claude/skills/` for Claude Code. It validates and stages the whole batch before replacing installed versions, rolls back the entire batch on an exchange failure, and refuses to overwrite a newer installed Skill. Existing `unity-autorun` installations are preserved with a manual removal notice so custom changes are not deleted.
 
 For Claude Desktop, select the directory containing `claude_desktop_config.json` and install MCP only. The Desktop target does not load filesystem Skills from that directory.
+
+![Unity Autorun Tool 0.3.4 MCP, Skills, and host Agent Rules installation](./Documentation~/images/autorun-install-0.3.4.png)
+
+## Upgrade from an older version
+
+After updating the Unity package and waiting for compilation, run `Publish MCP` again, update all three Skills at the original client target, and use `Update Agent Rules` or `Install Agent Rules` as needed. Reconnect the client and check each component's state. The package, MCP, Bridge, and Skills report versions separately; their version numbers need not be identical.
+
+Navigation maps, `gen-nav`, and manual XML navigation are retired. The installer preserves the legacy `unity-autorun` Skill; review customizations and remove it manually so stale instructions do not invoke removed tools. Existing navigation data, legacy script directories, and old screenshots are not silently migrated or deleted. Use the three script Skills for new business flows.
 
 ## Host Agent Rules and self-test selection
 
@@ -73,17 +90,35 @@ The `Autorun Scripts` panel includes:
 
 The default view shows script names, the run action, and a short result. Scripts declaring `PreparePlayMode=true` show an automatic startup hint and `Start Game & Run` in Edit Mode. Other scripts expose `Start game first` beside the run action. Active runs show their latest step log; completed runs append their final result to Console, and failures are shown directly. Expand `Script Details` for descriptions, starting conditions, sources, and dependencies; `Run Options` for parameters and timeout; and `Result Details` / `Recent Runs` for calls, logs, artifacts, and history. Errors and cancellation remain visible. MCP settings and Console start collapsed.
 
+![Unity Autorun Tool 0.3.4 Autorun Scripts panel](./Documentation~/images/autorun-scripts-0.3.4.png)
+
 The catalog and filtered choices are cached and updated after compilation or an explicit refresh. Focusing the window does not rescan the project, and idle run history does not trigger continuous repaints. Process and binary version queries run in the background; periodic process queries stop while MCP settings are collapsed.
 
 - Business/basic categories, name and ID search, and source opening.
 - Declared starting conditions, nested dependency trees, callers, and missing dependency, duplicate ID, cycle, or registration errors.
-- String-valued parameter JSON, explicit Play Mode preparation, timeout, run, and cancellation.
+- Host configuration menu access, string-valued parameter JSON, explicit Play Mode preparation, timeout, run, and cancellation.
 - Recent results, nested invocation states, logs, and screenshot artifacts.
 - Business source deletion through `AssetDatabase` after dependency checks and user confirmation. Basic scripts cannot be deleted from the panel.
 
 Success, failure, timeout, and cancellation preserve the current game state and Play Mode, releasing only resources owned by the script. Stop the game through an explicitly requested `unity_stop` or `stop-play-mode` action.
 
 The old navigation map, graph preview and route calculation, `gen-nav`, and manual XML navigation presets have been removed. Existing host-project data is not automatically migrated or deleted; future workflows use scripts.
+
+### Open a script's configuration (Configure)
+
+Select a script in the panel. If it declares a configuration menu, “打开配置界面” (Open configuration) appears above the run action. Clicking it invokes an existing host Unity menu. The host supplies the configuration UI and its save behavior. `Run Options` still controls this run's string-valued parameters and timeout.
+
+To expose an entry for your business script, add a `public static string ConfigurationMenuPath` property to the script class, replacing the example with an existing host `[MenuItem]` path. Compile, then refresh the script list.
+
+```csharp
+public static string ConfigurationMenuPath => "Tools/My Project/Autorun Settings";
+```
+
+![Actual configuration window supplied by the isolated demo project](./Documentation~/images/autorun-configuration-0.3.4.png)
+
+This window is supplied by the demo project to demonstrate the menu integration; it contains no host business data.
+
+The property needs a public static getter. Omitted or empty paths hide the action. An invalid detected property type/getter or a getter failure produces a registration error; an unexecutable menu path reports the failed path.
 
 ## C# script contract
 
@@ -132,7 +167,15 @@ Declare every `context.Call` target in the attribute's `Dependencies`. Missing d
 | `stop-play-mode` | Explicit game stop | None |
 | `log` | Run log entry | `message` |
 
-Screenshots default to the host project's `Temp/UnityAutorunTool/Screenshots/`. uGUI requires a button name or text, with observed paths/scopes narrowing candidates; prefer unique matches. Clicks check the current `EventSystem`, interactability, and raycast target before dispatching pointer events. FairyGUI supports only a unique button name and rejects text/path/scope selectors.
+uGUI requires a button name or text, with observed paths/scopes narrowing candidates; prefer unique matches. Clicks check the current `EventSystem`, interactability, and raycast target before dispatching pointer events. FairyGUI supports only a unique button name and rejects text/path/scope selectors.
+
+## Screenshots and evidence retention
+
+The `screenshot` basic script requires Play Mode and a rendering Game View. It waits for a complete PNG before recording the artifact. Omitting `path` saves to the host project's `Temp/UnityAutorunTool/Screenshots/` with a timestamp and unique ID.
+
+Before each default capture, cleanup removes temporary files last written more than **24 hours** ago and makes room for the new image, aiming to keep the latest **20 files**. The next default capture triggers cleanup. Locked files or insufficient permissions can leave files behind, and temporary artifact paths in run history may become unavailable after later cleanup.
+
+For documentation, regression comparisons, or long-term evidence, explicitly pass a project-relative `.png` path outside the tool's temporary directory, such as `AutorunEvidence/inventory-20261015.png`. These paths are not included in that cleanup. An existing destination fails rather than being overwritten, so choose a new filename. The old `AutorunToolData/Screenshots/` directory is not automatically migrated or cleaned.
 
 ## MCP and CLI
 
@@ -189,3 +232,5 @@ The .NET tests do not compile Unity Editor code or generated host scripts. Host 
 - Reload or Play Mode stopped during execution: inspect the retained terminal result. The runner does not restore arbitrary iterators or replay completed actions.
 - Stale Skill tools: update `gen-script`, `edit-script`, and `run-script`; review custom changes in an installed legacy `unity-autorun` before manually removing it.
 - Agent Rules error: inspect paired, unique begin/end markers in the host root `AGENTS.md`, preserving user content outside them; a newer rules version needs a tool version that supports it.
+- Missing configuration action: check that the selected script declares a nonempty public static string `ConfigurationMenuPath` property and has been compiled and refreshed. For an open failure, verify the host `[MenuItem]` path.
+- Missing historical screenshot: default captures are temporary and later default captures clean up by age and count. Use an explicit path outside the temporary directory to retain evidence.

@@ -4,6 +4,15 @@
 
 Unity Autorun Tool 是一个 Unity Editor 自动化工具。外部 AI 根据宿主项目源码与运行时证据生成可复用的 C# 业务脚本，Unity 负责编译并执行，MCP 提供脚本管理、运行状态、UIState 和基础交互能力。
 
+## 近期更新（0.3.x）
+
+当前包版本为 **0.3.4**，工作流已经统一为可编译、可检查起点和断言的 C# 脚本。
+
+- 三个独立 Skill 分别负责生成并自测、维护已有脚本和执行：`gen-script`、`edit-script`、`run-script`；可将“自测先检查已有脚本”的规则安装到宿主 `AGENTS.md`。
+- 脚本面板集中展示运行入口、步骤日志与结果；冷启动脚本声明 `PreparePlayMode=true` 后可直接 `Start Game & Run`，结束或失败保留游戏现场。
+- 脚本可声明宿主配置菜单，在面板中提供“打开配置界面”入口，方便运行前检查业务配置。
+- 默认运行截图存放在工具的临时目录，后续默认截图会清理过期和超量文件；需要长期保留的证据可显式指定保存路径。
+
 ## 快速安装
 
 需要 Unity 2021.3 或更新版本、[Git](https://git-scm.com/downloads) 和 [.NET 8 SDK](https://dotnet.microsoft.com/zh-cn/download/dotnet/8.0)。
@@ -24,6 +33,14 @@ Unity Autorun Tool 是一个 Unity Editor 自动化工具。外部 AI 根据宿�
 `Install Skills` 一次安装三个独立 Skill：Codex 安装到所选 `.codex` 同级的 `.agents/skills/`，Claude Code 安装到 `.claude/skills/`。安装器先验证并暂存整批文件，之后备份和替换；任一替换失败会回滚整批，已安装版本高于随包版本时拒绝覆盖。旧的 `unity-autorun` Skill 会保留并提示手动检查、卸载，避免删除用户定制内容。
 
 Claude Desktop 只安装 MCP：选择包含 `claude_desktop_config.json` 的目录，点击 `Install MCP`。该客户端不会通过此目录加载本地文件系统 Skills。
+
+![Unity Autorun Tool 0.3.4 的 MCP、Skills 与宿主 Agent Rules 安装区](./Documentation~/images/autorun-install-0.3.4.png)
+
+## 从旧版升级
+
+更新 Unity 包并等待编译后，重新 `Publish MCP`，在原客户端目标更新三个 Skills，再按需点击 `Update Agent Rules` 或 `Install Agent Rules`，重新连接客户端并核对各组件状态。包、MCP、Bridge 与各 Skill 独立展示版本，不要求版本号完全相同。
+
+旧导航图、`gen-nav` 和手动 XML 导航入口已移除；安装器保留旧 `unity-autorun` Skill，需检查用户定制后手动卸载，避免旧提示继续调用已移除工具。已有导航数据、旧脚本目录和旧截图不会静默迁移或删除，新业务流程使用三个脚本 Skills。
 
 ## 宿主 Agent Rules 与自测选择
 
@@ -73,17 +90,35 @@ $run-script 运行刚才生成的背包脚本，验证最终 UI 状态
 
 默认只展示脚本名称、运行入口与简短结果。声明 `PreparePlayMode=true` 的脚本旁显示自动启动提示，停止状态按钮显示 `Start Game & Run`。其他脚本可用按钮旁的 `Start game first` 明确选择进入 Play Mode。运行中显示最近一条步骤日志，完成后向 Console 追加最终结果，失败原因直接显示。展开 `Script Details` 查看完整描述、起点、源码和依赖树；展开 `Run Options` 配置参数与超时；展开 `Result Details` / `Recent Runs` 查看调用、日志、产物与历史。错误与取消入口直接可见，MCP 设置及 Console 默认收起。
 
+![Unity Autorun Tool 0.3.4 的 Autorun Scripts 面板](./Documentation~/images/autorun-scripts-0.3.4.png)
+
 脚本目录和筛选结果使用缓存，重新编译或显式刷新后更新；切回窗口不会重新扫描全项目。空闲时有历史结果也不会持续重绘。进程和二进制版本查询在后台进行，关闭 MCP 设置区后停止定期进程查询。
 
 - 业务/基础分类、名称和 ID 搜索、来源文件打开。
 - 声明的起点、依赖嵌套树、调用者，以及缺失依赖、重复 ID、循环或注册错误。
-- 字符串键值参数 JSON、Play Mode 准备选项、超时、运行与取消。
+- 宿主配置菜单入口、字符串键值参数 JSON、Play Mode 准备选项、超时、运行与取消。
 - 最近运行结果、嵌套调用状态、日志和截图等产物。
 - 业务脚本删除。删除前检查调用依赖和正在执行的任务，确认后通过 `AssetDatabase` 删除源文件；基础脚本不能从面板删除。
 
 正常结束、异常、超时和取消都会保留当前游戏现场与 Play Mode，只释放脚本拥有的资源。停止游戏需要明确调用 `unity_stop` 或 `stop-play-mode`，不会作为隐含的清理步骤。
 
 旧导航图、导航图预览、图路由计算、`gen-nav` 和手动 XML 预设导航已移除。已有宿主项目数据不会自动迁移或删除，后续流程使用脚本。
+
+### 打开脚本配置界面（Configure）
+
+在面板中选中脚本，若它声明了配置菜单，运行按钮上方会出现“打开配置界面”。点击即可打开宿主已有的 Unity 菜单；配置界面的内容和保存方式由宿主提供。`Run Options` 仍用于本次运行的字符串参数与超时。
+
+要为自己的业务脚本提供此入口，在脚本类中添加 `public static string ConfigurationMenuPath` 属性，并将示例替换为宿主实际存在的 `[MenuItem]` 路径；编译后刷新脚本列表。
+
+```csharp
+public static string ConfigurationMenuPath => "Tools/My Project/Autorun Settings";
+```
+
+属性需要公开的静态 getter。未声明或返回空路径时不显示入口；识别到的属性类型、getter 不合规或读取失败会显示注册错误，菜单路径无法执行时会显示失败路径。
+
+![隔离演示工程中通过配置菜单打开的实际窗口](./Documentation~/images/autorun-configuration-0.3.4.png)
+
+此处配置窗口由演示工程提供，展示菜单入口的接入方式，不包含宿主业务数据。
 
 ## C# 脚本契约
 
@@ -134,7 +169,15 @@ public sealed class CheckCurrentUi : AutoRunScript
 | `stop-play-mode` | 明确停止游戏 | 无 |
 | `log` | 记录运行日志 | `message` |
 
-截图默认保存到宿主项目 `Temp/UnityAutorunTool/Screenshots/`。uGUI 按钮必须提供名称或文本，观测到的层级路径/范围用于缩小候选，优先唯一匹配；点击通过当前 `EventSystem` 检查可交互状态及射线命中，再派发 pointer 事件。FairyGUI 仅支持唯一按钮名，不支持文本、路径或范围选择器。
+uGUI 按钮必须提供名称或文本，观测到的层级路径/范围用于缩小候选，优先唯一匹配；点击通过当前 `EventSystem` 检查可交互状态及射线命中，再派发 pointer 事件。FairyGUI 仅支持唯一按钮名，不支持文本、路径或范围选择器。
+
+## 截图与证据保留
+
+`screenshot` 基础脚本需要 Play Mode 和正在渲染的 Game View，会等待完整 PNG 落盘后记录产物。省略 `path` 时，截图保存到宿主项目的 `Temp/UnityAutorunTool/Screenshots/`，使用时间戳与唯一 ID 命名。
+
+每次默认截图前会清理该临时目录：按最后写入时间删除超过 **24 小时**的文件，并为新图腾出位置，尽量保留最新 **20 份**。清理由下一次默认截图触发；占用或权限问题可能使部分文件暂时保留，历史运行中的临时产物路径也可能在后续清理后失效。
+
+需要提交文档、比较回归或长期保存时，为 `screenshot` 显式传入工具临时目录外的项目相对 `.png` 路径，例如 `AutorunEvidence/inventory-20261015.png`。这类路径不参与上述自动清理；目标已存在会失败，需使用新的文件名。旧版本的 `AutorunToolData/Screenshots/` 不会自动迁移或清理。
 
 ## MCP 与 CLI
 
@@ -191,3 +234,5 @@ MCP 的 .NET 测试不会编译 Unity Editor 代码或宿主生成脚本；实�
 - 运行中重载或停止游戏：查看保留的终止结果；执行器不会自动恢复任意迭代器或重放动作。
 - Skill 仍使用旧工具：更新 `gen-script`、`edit-script`、`run-script` 并检查旧 `unity-autorun` 的客户端安装目录，保留定制后手动卸载旧 Skill。
 - Agent Rules 状态错误：检查宿主根目录 `AGENTS.md` 中的 begin/end 标记是否成对且唯一，不要删除区块外的用户规则；高版本规则需使用支持该版本的工具更新。
+- 配置入口未出现：确认所选脚本声明了非空的公开静态 `ConfigurationMenuPath` 字符串属性并已编译刷新；打开失败时检查宿主对应 `[MenuItem]` 路径。
+- 历史截图路径失效：默认截图是临时产物，后续默认截图会按时间和数量清理；需长期保留时使用临时目录外的显式路径。
