@@ -9,7 +9,6 @@ using UnityAutorun.Scripting;
 public partial class AutoRunWindow
 {
     [SerializeField] private string _selectedScriptId = "";
-    [SerializeField] private string _scriptSearch = "";
     [SerializeField] private int _scriptKindFilter = 1;
     [SerializeField] private string _scriptParametersJson = "{}";
     [SerializeField] private bool _scriptEnsurePlayMode;
@@ -22,9 +21,7 @@ public partial class AutoRunWindow
     private List<AutoRunScriptRunStatus> _scriptRuns = new List<AutoRunScriptRunStatus>();
     private readonly HashSet<string> _collapsedScriptNodes = new HashSet<string>();
     private static readonly string[] ScriptKindLabels = { "All", "Business", "Basic" };
-    private readonly List<AutoRunScriptDefinition> _filteredScripts = new List<AutoRunScriptDefinition>();
-    private string[] _scriptLabels = new string[0];
-    private string _cachedScriptSearch;
+    private AutoRunScriptCatalogTree _filteredScriptTree;
     private int _cachedScriptKind = -1;
     private bool _scriptFilterDirty = true;
     private long _catalogRevision = -1;
@@ -114,9 +111,16 @@ public partial class AutoRunWindow
     private void RenderScriptPanel()
     {
         BeginPanel("Autorun Scripts");
+        AutoRunScriptDefinition selected = _scriptDefinitions.Find(definition => definition.Id == _selectedScriptId);
         ResponsiveRow header = BeginResponsiveRow();
-        header.Add(180);
-        _scriptSearch = EditorGUILayout.TextField(_scriptSearch ?? "", GUILayout.MinWidth(0), GUILayout.ExpandWidth(true));
+        header.Add(250);
+        Rect selectorRect = EditorGUILayout.GetControlRect(false, EditorGUIUtility.singleLineHeight,
+            GUILayout.MinWidth(0), GUILayout.ExpandWidth(true));
+        Rect dropdownRect = EditorGUI.PrefixLabel(selectorRect, new GUIContent("Script"));
+        string selectionTooltip = selected == null ? "Choose a script from its directory."
+            : selected.Id + "\n" + selected.SourcePath;
+        var selectionLabel = new GUIContent(selected == null ? "Choose a script..." : selected.Name, selectionTooltip);
+        bool openPicker = GUI.Button(dropdownRect, selectionLabel, EditorStyles.popup);
         header.Add(95);
         _scriptKindFilter = EditorGUILayout.Popup(_scriptKindFilter, ScriptKindLabels, GUILayout.Width(95));
         header.Add(70);
@@ -125,52 +129,63 @@ public partial class AutoRunWindow
 
         if (!string.IsNullOrEmpty(_scriptWindowError)) EditorGUILayout.HelpBox(_scriptWindowError, MessageType.Error);
         foreach (string error in _scriptCatalogErrors) EditorGUILayout.HelpBox(error, MessageType.Error);
-        UpdateScriptFilter();
-        List<AutoRunScriptDefinition> filtered = _filteredScripts;
-        if (filtered.Count == 0)
+        if (selected != null)
         {
-            GUILayout.Label("No matching scripts. Use gen-script to create a business script.", GetWrappedStyle(EditorStyles.miniLabel));
+            GUILayout.Space(6);
+            RenderScriptDetails(selected);
         }
-        else
-        {
-            int index = filtered.FindIndex(definition => definition.Id == _selectedScriptId);
-            if (index < 0) index = 0;
-            index = EditorGUILayout.Popup("Script", index, _scriptLabels);
-            if (_selectedScriptId != filtered[index].Id)
-            {
-                _selectedScriptId = filtered[index].Id;
-                _showScriptDetails = false;
-                _showScriptRunOptions = false;
-            }
-            RenderScriptDetails(filtered[index]);
-        }
+        else GUILayout.Label("Choose a script to view its details and run options.", GetWrappedStyle(EditorStyles.miniLabel));
         RenderRecentScriptRuns();
         EndPanel();
+        if (openPicker)
+        {
+            ShowScriptSelectionMenu(dropdownRect);
+            GUIUtility.ExitGUI();
+        }
     }
     private void UpdateScriptFilter()
     {
-        if (!_scriptFilterDirty && _cachedScriptSearch == _scriptSearch && _cachedScriptKind == _scriptKindFilter) return;
-        _filteredScripts.Clear();
-        foreach (AutoRunScriptDefinition definition in _scriptDefinitions)
-            if (MatchesScriptFilter(definition)) _filteredScripts.Add(definition);
-        _scriptLabels = _filteredScripts.Select(definition => definition.Name).ToArray();
-        for (int index = 0; index < _filteredScripts.Count; index++)
-        {
-            AutoRunScriptDefinition definition = _filteredScripts[index];
-            if (_filteredScripts.Count(item => item.Name == definition.Name) > 1)
-                _scriptLabels[index] = definition.Name + " [" + definition.Id + "]";
-        }
-        _cachedScriptSearch = _scriptSearch;
+        if (!_scriptFilterDirty && _cachedScriptKind == _scriptKindFilter) return;
+        AutoRunScriptKind? kind = _scriptKindFilter == 1 ? AutoRunScriptKind.Business
+            : _scriptKindFilter == 2 ? AutoRunScriptKind.Basic : (AutoRunScriptKind?)null;
+        _filteredScriptTree = AutoRunScriptCatalogTree.Build(_scriptDefinitions, Path.GetDirectoryName(Application.dataPath), null, kind);
         _cachedScriptKind = _scriptKindFilter;
         _scriptFilterDirty = false;
     }
-    private bool MatchesScriptFilter(AutoRunScriptDefinition definition)
+    private void SelectScript(AutoRunScriptDefinition definition)
     {
-        if (_scriptKindFilter == 1 && definition.Kind != AutoRunScriptKind.Business) return false;
-        if (_scriptKindFilter == 2 && definition.Kind != AutoRunScriptKind.Basic) return false;
-        string query = (_scriptSearch ?? "").Trim();
-        return query.Length == 0 || (definition.Id + " " + definition.Name + " " + definition.Description)
-            .IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0;
+        if (_selectedScriptId == definition.Id) return;
+        _selectedScriptId = definition.Id;
+        _showScriptDetails = false;
+        _showScriptRunOptions = false;
+    }
+
+    private GenericMenu CreateScriptSelectionMenu()
+    {
+        UpdateScriptFilter();
+        var menu = new GenericMenu();
+        foreach (AutoRunScriptCatalogEntry entry in _filteredScriptTree.Scripts
+            .OrderBy(item => item.DirectoryPath, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(item => item.Label, StringComparer.OrdinalIgnoreCase))
+        {
+            AutoRunScriptDefinition definition = entry.Definition;
+            // GenericMenu uses slash as its submenu delimiter; slashes in a display name belong to the leaf label.
+            string label = entry.Label.Replace('/', '\u2215');
+            string menuPath = string.IsNullOrEmpty(entry.DirectoryPath) ? label : entry.DirectoryPath + "/" + label;
+            var content = new GUIContent(menuPath, definition.Id + "\n" + definition.SourcePath);
+            menu.AddItem(content, definition.Id == _selectedScriptId, () =>
+            {
+                SelectScript(definition);
+                Repaint();
+            });
+        }
+        if (_filteredScriptTree.Scripts.Count == 0) menu.AddDisabledItem(new GUIContent("No matching scripts"));
+        return menu;
+    }
+
+    private void ShowScriptSelectionMenu(Rect dropdownRect)
+    {
+        CreateScriptSelectionMenu().DropDown(dropdownRect);
     }
     private void RenderScriptDetails(AutoRunScriptDefinition definition)
     {

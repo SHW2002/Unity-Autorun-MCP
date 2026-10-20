@@ -35,6 +35,7 @@ namespace UnityAutorun.Mcp.Tests
         private static int Main()
         {
             Tests.AddRange(ScriptRuntimeTests.Cases());
+            Tests.AddRange(ScriptCatalogTests.Cases());
             Tests.AddRange(AgentInstructionsInstallTests.Cases());
             Tests.AddRange(SkillInstallTests.Cases());
             int failed = 0;
