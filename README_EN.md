@@ -88,13 +88,13 @@ All three Skills allow normal automatic discovery and explicit `$gen-script`, `$
 
 The `Autorun Scripts` panel includes:
 
-The default view shows script names, the run action, and a short result. Scripts declaring `PreparePlayMode=true` show an automatic startup hint and `Start Game & Run` in Edit Mode. Other scripts expose `Start game first` beside the run action. Active runs show their latest step log; completed runs append their final result to Console, and failures are shown directly. Expand `Script Details` for descriptions, starting conditions, sources, and dependencies; `Run Options` for parameters and timeout; and `Result Details` / `Recent Runs` for calls, logs, artifacts, and history. Errors and cancellation remain visible. MCP settings and Console start collapsed.
+The default view shows the selected script, the run action, and a short result. Click the Script selector to choose a script from the native Unity cascading menu, grouped by source directory. Scripts declaring `PreparePlayMode=true` show an automatic startup hint and `Start Game & Run` in Edit Mode. Other scripts expose `Start game first` beside the run action. Active runs show their latest step log; completed runs append their final result to Console, and failures are shown directly. Expand `Script Details` for descriptions, starting conditions, sources, and dependencies; `Run Options` for parameters and timeout; and `Result Details` / `Recent Runs` for calls, logs, artifacts, and history. Errors and cancellation remain visible. MCP settings and Console start collapsed.
 
 ![Unity Autorun Tool 0.3.4 Autorun Scripts panel](./Documentation~/images/autorun-scripts-0.3.4.png)
 
 The catalog and filtered choices are cached and updated after compilation or an explicit refresh. Focusing the window does not rescan the project, and idle run history does not trigger continuous repaints. Process and binary version queries run in the background; periodic process queries stop while MCP settings are collapsed.
 
-- Business/basic categories, name and ID search, and source opening.
+- Source directory submenus, business/basic type filtering, IDs for duplicate names, and source opening.
 - Declared starting conditions, nested dependency trees, callers, and missing dependency, duplicate ID, cycle, or registration errors.
 - Host configuration menu access, string-valued parameter JSON, explicit Play Mode preparation, timeout, run, and cancellation.
 - Recent results, nested invocation states, logs, and screenshot artifacts.

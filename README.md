@@ -88,13 +88,13 @@ $run-script 运行刚才生成的背包脚本，验证最终 UI 状态
 
 `Autorun Scripts` 面板提供：
 
-默认只展示脚本名称、运行入口与简短结果。声明 `PreparePlayMode=true` 的脚本旁显示自动启动提示，停止状态按钮显示 `Start Game & Run`。其他脚本可用按钮旁的 `Start game first` 明确选择进入 Play Mode。运行中显示最近一条步骤日志，完成后向 Console 追加最终结果，失败原因直接显示。展开 `Script Details` 查看完整描述、起点、源码和依赖树；展开 `Run Options` 配置参数与超时；展开 `Result Details` / `Recent Runs` 查看调用、日志、产物与历史。错误与取消入口直接可见，MCP 设置及 Console 默认收起。
+默认只展示所选脚本、运行入口与简短结果；点击 Script 选择框后，使用 Unity 原生级联菜单按源文件目录选择脚本。声明 `PreparePlayMode=true` 的脚本旁显示自动启动提示，停止状态按钮显示 `Start Game & Run`。其他脚本可用按钮旁的 `Start game first` 明确选择进入 Play Mode。运行中显示最近一条步骤日志，完成后向 Console 追加最终结果，失败原因直接显示。展开 `Script Details` 查看完整描述、起点、源码和依赖树；展开 `Run Options` 配置参数与超时；展开 `Result Details` / `Recent Runs` 查看调用、日志、产物与历史。错误与取消入口直接可见，MCP 设置及 Console 默认收起。
 
 ![Unity Autorun Tool 0.3.4 的 Autorun Scripts 面板](./Documentation~/images/autorun-scripts-0.3.4.png)
 
 脚本目录和筛选结果使用缓存，重新编译或显式刷新后更新；切回窗口不会重新扫描全项目。空闲时有历史结果也不会持续重绘。进程和二进制版本查询在后台进行，关闭 MCP 设置区后停止定期进程查询。
 
-- 业务/基础分类、名称和 ID 搜索、来源文件打开。
+- 按源目录生成一级、二级及更深子菜单，业务/基础类型筛选、同名脚本 ID 区分和来源文件打开。
 - 声明的起点、依赖嵌套树、调用者，以及缺失依赖、重复 ID、循环或注册错误。
 - 宿主配置菜单入口、字符串键值参数 JSON、Play Mode 准备选项、超时、运行与取消。
 - 最近运行结果、嵌套调用状态、日志和截图等产物。
