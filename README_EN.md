@@ -6,7 +6,9 @@ Unity Autorun Tool automates Unity Editor workflows using reusable C# business s
 
 ## Recent updates (0.3.x)
 
-The current package version is **0.3.4**. Workflows now use compiled C# scripts with explicit starting conditions and observable assertions.
+The current package version is **0.3.5**. Workflows now use compiled C# scripts with explicit starting conditions and observable assertions.
+
+- `0.3.5`: Bridge starts automatically with the editor and restores after reload. Retaining the legacy `_scriptSearch` serialized field prevents existing configuration windows from aborting before applying run parameters. Configuration generation, validation, and UPM release rules are clarified.
 
 - Three independent Skills cover creation and self-test repairs, maintenance, and execution: `gen-script`, `edit-script`, and `run-script`. Install host `AGENTS.md` rules to check existing scripts before self-testing.
 - The script panel brings together run actions, step logs, and results. Cold-start scripts declaring `PreparePlayMode=true` support `Start Game & Run`; completion and failure preserve the game state.
@@ -30,6 +32,8 @@ Requires Unity 2021.3 or newer, [Git](https://git-scm.com/downloads), and the [.
 6. To make agents check existing scripts before game/UI self-tests, press `Install Agent Rules` in the separate `Agent Rules` row. It writes instructions to `AGENTS.md` at the current host Unity project root, independently of the client directory and `Install Skills`.
 7. Reconnect the AI client. Confirm `Bridge` is `Running` and `Processes` shows its MCP process. `Versions` displays separate MCP, `gen-script`, `edit-script`, and `run-script` versions and installation states.
 
+Bridge starts automatically with the Unity Editor once compilation and asset importing finish. It restores after assembly reload and retains the selected port for the current session. A manual `Stop` remains in effect for that session; manual `Start` or the next Unity launch enables it again.
+
 `Install Skills` installs all three independent Skills into `.agents/skills/` beside the selected `.codex` directory, or into `.claude/skills/` for Claude Code. It validates and stages the whole batch before replacing installed versions, rolls back the entire batch on an exchange failure, and refuses to overwrite a newer installed Skill. Existing `unity-autorun` installations are preserved with a manual removal notice so custom changes are not deleted.
 
 For Claude Desktop, select the directory containing `claude_desktop_config.json` and install MCP only. The Desktop target does not load filesystem Skills from that directory.
@@ -37,6 +41,8 @@ For Claude Desktop, select the directory containing `claude_desktop_config.json`
 ![Unity Autorun Tool 0.3.4 MCP, Skills, and host Agent Rules installation](./Documentation~/images/autorun-install-0.3.4.png)
 
 ## Upgrade from an older version
+
+Implement and release tool fixes in this tool repository. Host projects receive them only through UPM (Unity Package Manager), using a published Git tag or registry version. Do not deploy changes into host `LocalPkg`, `LocalPackages`, embedded packages, `Assets`, or `Library/PackageCache`; do not overwrite package sources or DLLs, or substitute `file:` paths or directory links for a version update. Report unpublished fixes and unverified UPM updates explicitly instead of treating local patches as a released fix.
 
 After updating the Unity package and waiting for compilation, run `Publish MCP` again, update all three Skills at the original client target, and use `Update Agent Rules` or `Install Agent Rules` as needed. Reconnect the client and check each component's state. The package, MCP, Bridge, and Skills report versions separately; their version numbers need not be identical.
 
@@ -107,6 +113,10 @@ The old navigation map, graph preview and route calculation, `gen-nav`, and manu
 ### Open a script's configuration (Configure)
 
 Select a script in the panel. If it declares a configuration menu, “打开配置界面” (Open configuration) appears above the run action. Clicking it invokes an existing host Unity menu. The host supplies the configuration UI and its save behavior. `Run Options` still controls this run's string-valued parameters and timeout.
+
+The menu only opens a window; it does not pass saved host settings to a run. The host window must explicitly apply parameter JSON and timeout, then save its settings. Inspect the installed tool's actual API first. If `SerializedObject` integration is needed, call `Update()` before lookup, validate all required properties, and null-check optional search/filter/foldout properties so removed fields cannot abort parameter application. Verify the real configuration/apply path and read back `Run Options`; manually passing MCP parameters does not validate the window.
+
+The tool retains the legacy `_scriptSearch` serialized field for existing configuration windows that still access it while applying parameters. It no longer filters scripts; new integrations should not depend on it.
 
 To expose an entry for your business script, add a `public static string ConfigurationMenuPath` property to the script class, replacing the example with an existing host `[MenuItem]` path. Compile, then refresh the script list.
 

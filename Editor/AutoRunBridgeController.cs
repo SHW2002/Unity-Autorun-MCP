@@ -5,9 +5,10 @@ public static class AutoRunBridgeController
 {
     private const string BridgeEnabledKey = "UnityAutorunTool.BridgeEnabled";
     private const string BridgePortKey = "UnityAutorunTool.BridgePort";
-    private static readonly AutoRunBridgeServer Server = new();
+    private static readonly AutoRunBridgeServer Server = new AutoRunBridgeServer();
 
-    public static bool IsEnabled => SessionState.GetBool(BridgeEnabledKey, false);
+    // 新编辑器会话默认启动；显式停止在当前会话的程序集重载后仍然有效。
+    public static bool IsEnabled => SessionState.GetBool(BridgeEnabledKey, true);
     public static bool IsRunning => Server.IsRunning;
     public static int Port => Server.Port;
     public static string Url => Server.Url;
@@ -16,6 +17,7 @@ public static class AutoRunBridgeController
     {
         EditorApplication.update += RestoreBridgeOnNextUpdate;
         AssemblyReloadEvents.beforeAssemblyReload += StopBeforeAssemblyReload;
+        EditorApplication.quitting += StopBeforeAssemblyReload;
     }
 
     public static void Start()

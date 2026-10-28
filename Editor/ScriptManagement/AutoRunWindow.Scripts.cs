@@ -9,6 +9,8 @@ using UnityAutorun.Scripting;
 public partial class AutoRunWindow
 {
     [SerializeField] private string _selectedScriptId = "";
+    // 保留旧配置窗口使用的序列化字段，避免参数应用因 FindProperty 返回 null 而中断。
+    [SerializeField, HideInInspector] private string _scriptSearch = "";
     [SerializeField] private int _scriptKindFilter = 1;
     [SerializeField] private string _scriptParametersJson = "{}";
     [SerializeField] private bool _scriptEnsurePlayMode;

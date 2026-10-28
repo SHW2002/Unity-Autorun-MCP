@@ -9,7 +9,7 @@ using UnityEngine;
 
 public sealed class AutoRunBridgeServer
 {
-    public const string Version = "0.3.3";
+    public const string Version = "0.3.5";
     public const string Host = "127.0.0.1";
     public const int DefaultPort = 17331;
 

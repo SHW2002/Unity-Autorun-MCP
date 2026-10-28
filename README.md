@@ -6,7 +6,9 @@ Unity Autorun Tool 是一个 Unity Editor 自动化工具。外部 AI 根据宿�
 
 ## 近期更新（0.3.x）
 
-当前包版本为 **0.3.4**，工作流已经统一为可编译、可检查起点和断言的 C# 脚本。
+当前包版本为 **0.3.5**，工作流已经统一为可编译、可检查起点和断言的 C# 脚本。
+
+- `0.3.5`：Bridge 默认随编辑器启动并在重载后恢复；保留旧配置窗口访问的 `_scriptSearch` 序列化字段，修复配置应用中断导致运行参数为空的问题；完善配置生成、自测和 UPM 版本交付规范。
 
 - 三个独立 Skill 分别负责生成并自测、维护已有脚本和执行：`gen-script`、`edit-script`、`run-script`；可将“自测先检查已有脚本”的规则安装到宿主 `AGENTS.md`。
 - 脚本面板集中展示运行入口、步骤日志与结果；冷启动脚本声明 `PreparePlayMode=true` 后可直接 `Start Game & Run`，结束或失败保留游戏现场。
@@ -30,6 +32,8 @@ Unity Autorun Tool 是一个 Unity Editor 自动化工具。外部 AI 根据宿�
 6. 如需让 Agent 在游戏/UI 自测前优先检查已有脚本，在独立的 `Agent Rules` 行点击 `Install Agent Rules`，将提示规则写入当前宿主 Unity 项目根目录的 `AGENTS.md`。这一步与客户端目录和 `Install Skills` 分开。
 7. 重新连接 AI 客户端，确认 `Bridge` 为 `Running`，`Processes` 显示对应 MCP 进程。`Versions` 分别展示 MCP、`gen-script`、`edit-script`、`run-script` 的版本和安装状态。
 
+Bridge 随 Unity 编辑器启动，在编译和资源导入完成后自动开启；程序集重载后恢复服务并保留本次会话选用的端口。手动 `Stop` 会在当前会话内保持停止，手动 `Start` 或下次重新启动 Unity 后再次开启。
+
 `Install Skills` 一次安装三个独立 Skill：Codex 安装到所选 `.codex` 同级的 `.agents/skills/`，Claude Code 安装到 `.claude/skills/`。安装器先验证并暂存整批文件，之后备份和替换；任一替换失败会回滚整批，已安装版本高于随包版本时拒绝覆盖。旧的 `unity-autorun` Skill 会保留并提示手动检查、卸载，避免删除用户定制内容。
 
 Claude Desktop 只安装 MCP：选择包含 `claude_desktop_config.json` 的目录，点击 `Install MCP`。该客户端不会通过此目录加载本地文件系统 Skills。
@@ -37,6 +41,8 @@ Claude Desktop 只安装 MCP：选择包含 `claude_desktop_config.json` 的目�
 ![Unity Autorun Tool 0.3.4 的 MCP、Skills 与宿主 Agent Rules 安装区](./Documentation~/images/autorun-install-0.3.4.png)
 
 ## 从旧版升级
+
+工具修复在本工具工程中完成并发布版本，宿主只通过 UPM（Unity Package Manager）更新已发布的 Git 标签或注册表版本。禁止把改动部署到宿主 `LocalPkg`、`LocalPackages`、嵌入式包、`Assets` 或 `Library/PackageCache`，禁止覆盖包源码或 DLL，也不能使用 `file:` 路径、目录链接等本地源码引用代替版本更新。未发布的修复和未经 UPM 更新验证的宿主状态必须明确标记，不能以本地补丁声称版本修复已生效。
 
 更新 Unity 包并等待编译后，重新 `Publish MCP`，在原客户端目标更新三个 Skills，再按需点击 `Update Agent Rules` 或 `Install Agent Rules`，重新连接客户端并核对各组件状态。包、MCP、Bridge 与各 Skill 独立展示版本，不要求版本号完全相同。
 
@@ -107,6 +113,10 @@ $run-script 运行刚才生成的背包脚本，验证最终 UI 状态
 ### 打开脚本配置界面（Configure）
 
 在面板中选中脚本，若它声明了配置菜单，运行按钮上方会出现“打开配置界面”。点击即可打开宿主已有的 Unity 菜单；配置界面的内容和保存方式由宿主提供。`Run Options` 仍用于本次运行的字符串参数与超时。
+
+菜单入口只打开窗口，不会自动把宿主保存值传入运行。宿主配置窗口应显式应用参数 JSON 与超时，并在应用后保存设置。接入前核对已安装工具的实际 API；使用 `SerializedObject` 时先 `Update()`，验证所有必需字段，对可选的搜索、筛选、折叠字段独立判空，避免工具升级删除字段后中断参数应用。验证时应实际操作“配置→应用”，并在主窗口 `Run Options` 核对参数；仅通过 MCP 手工传参不能证明配置窗口有效。
+
+工具保留旧版 `_scriptSearch` 序列化字段，以兼容仍通过该字段应用参数的配置窗口；该字段不再参与脚本筛选，新接入不应依赖它。
 
 要为自己的业务脚本提供此入口，在脚本类中添加 `public static string ConfigurationMenuPath` 属性，并将示例替换为宿主实际存在的 `[MenuItem]` 路径；编译后刷新脚本列表。
 

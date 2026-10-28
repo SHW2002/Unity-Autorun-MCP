@@ -17,6 +17,8 @@ Identify the starting scene/UI, required parameters, exact actions, and observab
 
 Before asserting a host state flag, inspect its getter and assignments to establish its meaning. An operation-in-progress flag does not prove authentication, completion, or resource availability. Preconditions must express the requested flow; do not add unrelated restrictions based on a flag's name.
 
+For a host configuration window, follow the configuration integration and apply-path checks in the script contract. A working menu or a self-test with manually supplied parameters does not prove that the saved GUI values reach the run.
+
 For startup navigation, inspect delayed automatic popup and loading queues in host sources and runtime evidence. When the user has authorized dismissal, verify each known popup's close control and how dismissal advances the queue, then close them in that order. Reuse an independently runnable business dismissal script when its complete flow matches. An unknown popup fails with concrete evidence. Assert completion only after the verified queues/loading have finished and the target remains stable and unobstructed; a briefly clickable home screen is insufficient.
 
 Use `list_scripts` and `get_script(includeSource=true)` to review candidate dependencies. Reuse a script only when its complete behavior, starting requirements, and outputs exactly match the required segment. A shared target name or partial overlap does not establish equivalence. Never modify a reused business script or built-in script to fit the new task. Different flows or starting states to the same target receive separate IDs and source files.

@@ -22,6 +22,14 @@ Context members include `RunId`, `ScriptId`, `Host`, `GetString`, `GetInt`, `Get
 
 Host operations include `IsPlaying`, `ClickButton(AutoRunScriptButtonSelector)`, `EvaluateUiState(AutoRunScriptUiStateQuery)`, `CaptureScreenshot(projectRelativePath)`, and `StopPlayMode()`. Use actual project APIs for project-specific behavior. The core runtime remains generic.
 
+## Host configuration windows
+
+`public static string ConfigurationMenuPath` exposes an existing host `[MenuItem]` through the script panel. Opening this menu does not transfer saved settings to a run. The host window must explicitly apply its parameter JSON and timeout to the intended main window, or the script must explicitly read the host's saved settings under its documented parameter contract.
+
+Inspect the installed tool's actual configuration API and source before generating an integration. Prefer a public API where one exists. If `SerializedObject` is necessary, call `Update()` before looking up properties, validate every required `FindProperty` result before changing values, and guard optional presentation properties independently. Never assume private field names from an older version still exist; an absent search/filter/foldout property must not prevent required parameters from being applied. Persist settings and report success only after the apply completes. Do not inject host-specific parameter names into the core runtime or implicitly pass them to dependencies.
+
+For a configuration defect, verify the actual open/edit/apply path and read back the selected script, string-valued JSON and timeout, including after a domain reload when persistence is promised. Testing only `start_script` with manually supplied parameters bypasses this path and cannot prove that GUI configuration works. Report untested GUI or persistence paths explicitly.
+
 ## Startup completion and delayed popups
 
 Inspect the host's delayed automatic popup queue and loading completion signals before defining the final startup assertion. With the user's dismissal authorization, close only popup types whose actual close controls and queue advancement have been verified from source and runtime evidence. Wait for the next queued item rather than assuming one close empties the queue. Unknown popups fail instead of being dismissed by a guessed selector.
