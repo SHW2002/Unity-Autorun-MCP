@@ -6,7 +6,9 @@ Unity Autorun Tool automates Unity Editor workflows using reusable C# business s
 
 ## Recent updates (0.3.x)
 
-The current package version is **0.3.6**. Workflows now use compiled C# scripts with explicit starting conditions and observable assertions.
+The current package version is **0.3.7**. Workflows now use compiled C# scripts with explicit starting conditions and observable assertions.
+
+- `0.3.7`: Align UPM package metadata with the Bridge and MCP versions, including the script-result and service-recovery fixes from 0.3.6.
 
 - `0.3.6`: Run summaries and errors follow the selected script; historical details never replace its latest status. Bridge startup failures retry in the background, and explicitly running a script restores the service automatically.
 
