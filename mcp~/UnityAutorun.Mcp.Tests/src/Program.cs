@@ -39,6 +39,7 @@ namespace UnityAutorun.Mcp.Tests
             Tests.AddRange(AgentInstructionsInstallTests.Cases());
             Tests.AddRange(SkillInstallTests.Cases());
             Tests.AddRange(BridgeLifecycleTests.Cases());
+            Tests.AddRange(ScriptRunSelectionTests.Cases());
             int failed = 0;
             foreach ((string name, Action test) in Tests)
             {

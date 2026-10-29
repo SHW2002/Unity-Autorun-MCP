@@ -35,9 +35,11 @@ public partial class AutoRunWindow
     private double _scriptLastPoll;
     private bool _showScriptLogs;
     private string _scriptWindowError;
+    private string _displayedScriptId;
 
     private void EnableScriptWindow()
     {
+        _displayedScriptId = _selectedScriptId;
         EditorApplication.update -= PollScriptWindow;
         EditorApplication.update += PollScriptWindow;
         AutoRunScriptService.CatalogChanged -= HandleScriptCatalogChanged;
@@ -112,6 +114,7 @@ public partial class AutoRunWindow
 
     private void RenderScriptPanel()
     {
+        SynchronizeScriptSelection();
         BeginPanel("Autorun Scripts");
         AutoRunScriptDefinition selected = _scriptDefinitions.Find(definition => definition.Id == _selectedScriptId);
         ResponsiveRow header = BeginResponsiveRow();
@@ -158,8 +161,20 @@ public partial class AutoRunWindow
     {
         if (_selectedScriptId == definition.Id) return;
         _selectedScriptId = definition.Id;
+        SynchronizeScriptSelection();
         _showScriptDetails = false;
         _showScriptRunOptions = false;
+    }
+
+    private void SynchronizeScriptSelection()
+    {
+        // 配置窗口也能通过 SerializedObject 切换脚本，统一在渲染入口同步。
+        if (_displayedScriptId == _selectedScriptId) return;
+        _displayedScriptId = _selectedScriptId;
+        _selectedScriptRunId = "";
+        _scriptWindowError = null;
+        _showScriptRunDetails = false;
+        _showScriptLogs = false;
     }
 
     private GenericMenu CreateScriptSelectionMenu()
@@ -278,6 +293,7 @@ public partial class AutoRunWindow
         try
         {
             ReportCompletedScriptRun();
+            AutoRunBridgeController.EnsureRunning();
             _scriptWindowError = null;
             if (double.IsNaN(_scriptTimeoutSeconds) || double.IsInfinity(_scriptTimeoutSeconds) || _scriptTimeoutSeconds <= 0)
                 throw new InvalidOperationException("Timeout must be a positive finite number.");
@@ -336,47 +352,73 @@ public partial class AutoRunWindow
     {
         GUILayout.Space(6);
         if (_scriptRuns.Count == 0) { GUILayout.Label("No runs in this editor session.", EditorStyles.miniLabel); return; }
-        // 历史选择只控制详情，摘要始终跟随当前或最新运行，包括从外部入口启动的运行。
-        AutoRunScriptRunStatus current = _scriptRuns.Find(run => !run.IsTerminal) ?? _scriptRuns[0];
-        AutoRunScriptDefinition definition = _scriptDefinitions.Find(item => item.Id == current.ScriptId);
-        GUILayout.Label((definition == null ? current.ScriptId : definition.Name) + " | " + current.State
-            + " | " + current.ElapsedSeconds.ToString("0.0") + "s", GetWrappedStyle(EditorStyles.miniBoldLabel));
-        string message = !current.IsTerminal && current.Logs.Count > 0
-            ? current.Logs[current.Logs.Count - 1] : current.Message ?? "";
-        string summary = message.Replace('\r', ' ').Replace('\n', ' ');
-        if (summary.Length > 100) summary = summary.Substring(0, 100) + "…";
-        if (current.State == AutoRunScriptRunState.Failed || current.State == AutoRunScriptRunState.TimedOut)
-            EditorGUILayout.HelpBox(summary, MessageType.Error);
-        else GUILayout.Label(new GUIContent(summary, message), EditorStyles.miniLabel);
-        if (!current.IsTerminal && GUILayout.Button("Cancel Run"))
+        AutoRunScriptRunStatus active = _scriptRuns.Find(run => !run.IsTerminal && run.ScriptId != _selectedScriptId);
+        if (active != null)
         {
-            _selectedScriptRunId = current.RunId;
-            AutoRunScriptService.Cancel(current.RunId);
-            AppendConsoleText("Cancellation requested: " + current.RunId);
-            RefreshScriptRuns();
-        }
-        _showScriptHistory = EditorGUILayout.Foldout(_showScriptHistory, "Recent Runs (" + _scriptRuns.Count + ")", true);
-        if (_showScriptHistory)
-        {
-            foreach (AutoRunScriptRunStatus run in _scriptRuns.Take(8))
+            GUILayout.Label("Running: " + active.ScriptId, GetWrappedStyle(EditorStyles.miniBoldLabel));
+            if (GUILayout.Button("Cancel Run"))
             {
-                AutoRunScriptDefinition script = _scriptDefinitions.Find(item => item.Id == run.ScriptId);
-                if (GUILayout.Button((script == null ? run.ScriptId : script.Name) + " | " + run.State, GetWrappedStyle(GUI.skin.button)))
-                {
-                    _selectedScriptRunId = run.RunId;
-                    _showScriptRunDetails = true;
-                }
+                AutoRunScriptService.Cancel(active.RunId);
+                AppendConsoleText("Cancellation requested: " + active.RunId);
+                RefreshScriptRuns();
             }
         }
+        // 摘要始终显示当前脚本的最新状态；主动选择的历史记录只控制详情。
+        AutoRunScriptRunStatus current = AutoRunScriptRunSelection.Select(_scriptRuns, _selectedScriptId, null);
+        if (current == null) GUILayout.Label("No runs for the selected script in this editor session.", GetWrappedStyle(EditorStyles.miniLabel));
+        else RenderSelectedScriptRun(current);
+        RenderScriptRunHistory();
+        AutoRunScriptRunStatus selected = AutoRunScriptRunSelection.Select(_scriptRuns, _selectedScriptId, _selectedScriptRunId);
+        if (selected != null) RenderScriptRunDetails(selected);
+    }
+
+    private void RenderSelectedScriptRun(AutoRunScriptRunStatus selected)
+    {
+        AutoRunScriptDefinition definition = _scriptDefinitions.Find(item => item.Id == selected.ScriptId);
+        GUILayout.Label((definition == null ? selected.ScriptId : definition.Name) + " | " + selected.State
+            + " | " + selected.ElapsedSeconds.ToString("0.0") + "s", GetWrappedStyle(EditorStyles.miniBoldLabel));
+        string message = !selected.IsTerminal && selected.Logs.Count > 0
+            ? selected.Logs[selected.Logs.Count - 1] : selected.Message ?? "";
+        string summary = message.Replace('\r', ' ').Replace('\n', ' ');
+        if (summary.Length > 100) summary = summary.Substring(0, 100) + "…";
+        if (selected.State == AutoRunScriptRunState.Failed || selected.State == AutoRunScriptRunState.TimedOut)
+            EditorGUILayout.HelpBox(summary, MessageType.Error);
+        else GUILayout.Label(new GUIContent(summary, message), EditorStyles.miniLabel);
+        if (!selected.IsTerminal && GUILayout.Button("Cancel Run"))
+        {
+            _selectedScriptRunId = selected.RunId;
+            AutoRunScriptService.Cancel(selected.RunId);
+            AppendConsoleText("Cancellation requested: " + selected.RunId);
+            RefreshScriptRuns();
+        }
+    }
+
+    private void RenderScriptRunHistory()
+    {
+        _showScriptHistory = EditorGUILayout.Foldout(_showScriptHistory, "Recent Runs (" + _scriptRuns.Count + ")", true);
+        if (!_showScriptHistory) return;
+        foreach (AutoRunScriptRunStatus run in _scriptRuns.Take(8))
+        {
+            AutoRunScriptDefinition script = _scriptDefinitions.Find(item => item.Id == run.ScriptId);
+            if (GUILayout.Button((script == null ? run.ScriptId : script.Name) + " | " + run.State, GetWrappedStyle(GUI.skin.button)))
+            {
+                _selectedScriptId = run.ScriptId;
+                SynchronizeScriptSelection();
+                _selectedScriptRunId = run.RunId;
+                _showScriptRunDetails = true;
+                Repaint();
+                GUIUtility.ExitGUI();
+            }
+        }
+    }
+
+    private void RenderScriptRunDetails(AutoRunScriptRunStatus selected)
+    {
+        string message = !selected.IsTerminal && selected.Logs.Count > 0
+            ? selected.Logs[selected.Logs.Count - 1] : selected.Message ?? "";
         _showScriptRunDetails = EditorGUILayout.Foldout(_showScriptRunDetails, "Result Details", true);
         if (!_showScriptRunDetails) return;
-        AutoRunScriptRunStatus selected = _scriptRuns.Find(run => run.RunId == _selectedScriptRunId) ?? current;
-        AutoRunScriptDefinition selectedDefinition = _scriptDefinitions.Find(item => item.Id == selected.ScriptId);
-        GUILayout.Label((selectedDefinition == null ? selected.ScriptId : selectedDefinition.Name) + " | " + selected.State,
-            GetWrappedStyle(EditorStyles.miniBoldLabel));
         GUILayout.Label(selected.RunId + " | " + selected.Code, GetWrappedStyle(EditorStyles.miniLabel));
-        message = !selected.IsTerminal && selected.Logs.Count > 0
-            ? selected.Logs[selected.Logs.Count - 1] : selected.Message ?? "";
         GUILayout.Label(message, GetWrappedStyle(EditorStyles.label));
         foreach (AutoRunScriptInvocation call in selected.Calls)
             GUILayout.Label(new string(' ', call.Depth * 2) + call.ScriptId + " | " + call.State + " | " + call.Message, GetWrappedStyle(EditorStyles.miniLabel));

@@ -12,6 +12,8 @@ namespace UnityAutorun.Mcp.Tests
             yield return ("bridge starts automatically once the editor is ready", Startup);
             yield return ("bridge restores after reload and retains the selected port", Reload);
             yield return ("manual bridge stop survives reload until a new editor session", ManualStop);
+            yield return ("bridge startup retries transient failures without blocking", RetryStartup);
+            yield return ("an explicit script run restores a stopped service", EnsureRunning);
             yield return ("editor quit releases the bridge", Quit);
         }
 
@@ -52,17 +54,52 @@ namespace UnityAutorun.Mcp.Tests
             Assert(AutoRunBridgeController.IsRunning && AutoRunBridgeController.IsEnabled, "A new editor session did not auto-start.");
         }
 
+        private static void RetryStartup()
+        {
+            AssemblyReloadEvents.Reload();
+            AutoRunBridgeServer.FailuresRemaining = 1;
+            int starts = AutoRunBridgeServer.Starts;
+            RestoreAfterReload();
+            Assert(!AutoRunBridgeController.IsRunning && AutoRunWindow.Warnings == 1, "Startup failure escaped or was not reported.");
+            EditorApplication.Tick();
+            Assert(AutoRunBridgeServer.Starts == starts + 1, "Startup failure retried every frame.");
+            EditorApplication.timeSinceStartup += 5;
+            EditorApplication.Tick();
+            Assert(AutoRunBridgeController.IsRunning && AutoRunBridgeServer.Starts == starts + 2, "Startup did not recover automatically.");
+        }
+
+        private static void EnsureRunning()
+        {
+            AutoRunBridgeController.Stop();
+            EditorApplication.Tick();
+            Assert(!AutoRunBridgeController.IsRunning, "Manual stop was ignored.");
+            EditorApplication.isCompiling = true;
+            AutoRunBridgeController.EnsureRunning();
+            AutoRunBridgeController.EnsureRunning();
+            EditorApplication.Tick();
+            Assert(!AutoRunBridgeController.IsRunning, "Explicit recovery started during compilation.");
+            EditorApplication.isCompiling = false;
+            int starts = AutoRunBridgeServer.Starts;
+            EditorApplication.Tick();
+            EditorApplication.Tick();
+            Assert(AutoRunBridgeController.IsRunning && AutoRunBridgeServer.Starts == starts + 1, "Explicit recovery did not start exactly once.");
+        }
+
         private static void Quit()
         {
             EditorApplication.Quit();
             Assert(!AutoRunBridgeController.IsRunning, "Quit left the bridge running.");
+            EditorApplication.Tick();
+            Assert(!AutoRunBridgeController.IsRunning, "An update after quit restarted the bridge.");
         }
 
         private static void RestoreAfterReload()
         {
             // 域重载后 Unity 会重新注册此回调；测试宿主显式调度同一个入口。
             MethodInfo restore = typeof(AutoRunBridgeController).GetMethod("RestoreBridgeOnNextUpdate", BindingFlags.NonPublic | BindingFlags.Static);
-            EditorApplication.update += (Action)Delegate.CreateDelegate(typeof(Action), restore);
+            Action callback = (Action)Delegate.CreateDelegate(typeof(Action), restore);
+            EditorApplication.update -= callback;
+            EditorApplication.update += callback;
             EditorApplication.Tick();
         }
 

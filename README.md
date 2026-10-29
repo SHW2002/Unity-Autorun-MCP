@@ -6,7 +6,9 @@ Unity Autorun Tool 是一个 Unity Editor 自动化工具。外部 AI 根据宿�
 
 ## 近期更新（0.3.x）
 
-当前包版本为 **0.3.5**，工作流已经统一为可编译、可检查起点和断言的 C# 脚本。
+当前包版本为 **0.3.6**，工作流已经统一为可编译、可检查起点和断言的 C# 脚本。
+
+- `0.3.6`：运行摘要和错误随所选脚本切换，历史详情不会覆盖最新状态；服务启动失败时后台限频重试，显式运行脚本会自动恢复服务。
 
 - `0.3.5`：Bridge 默认随编辑器启动并在重载后恢复；保留旧配置窗口访问的 `_scriptSearch` 序列化字段，修复配置应用中断导致运行参数为空的问题；完善配置生成、自测和 UPM 版本交付规范。
 
@@ -94,7 +96,7 @@ $run-script 运行刚才生成的背包脚本，验证最终 UI 状态
 
 `Autorun Scripts` 面板提供：
 
-默认只展示所选脚本、运行入口与简短结果；点击 Script 选择框后，使用 Unity 原生级联菜单按源文件目录选择脚本。声明 `PreparePlayMode=true` 的脚本旁显示自动启动提示，停止状态按钮显示 `Start Game & Run`。其他脚本可用按钮旁的 `Start game first` 明确选择进入 Play Mode。运行中显示最近一条步骤日志，完成后向 Console 追加最终结果，失败原因直接显示。展开 `Script Details` 查看完整描述、起点、源码和依赖树；展开 `Run Options` 配置参数与超时；展开 `Result Details` / `Recent Runs` 查看调用、日志、产物与历史。错误与取消入口直接可见，MCP 设置及 Console 默认收起。
+默认只展示所选脚本、运行入口与简短结果；点击 Script 选择框后，使用 Unity 原生级联菜单按源文件目录选择脚本。声明 `PreparePlayMode=true` 的脚本旁显示自动启动提示，停止状态按钮显示 `Start Game & Run`。其他脚本可用按钮旁的 `Start game first` 明确选择进入 Play Mode。运行中显示最近一条步骤日志，完成后向 Console 追加最终结果，失败原因直接显示。状态和错误仅对应当前选中脚本；切换脚本清除临时错误，历史记录仍可从 Recent Runs 主动打开。显式运行脚本会请求后台启动 Bridge，自动启动的短暂失败每 5 秒重试，不弹窗阻塞本地执行。展开 `Script Details` 查看完整描述、起点、源码和依赖树；展开 `Run Options` 配置参数与超时；展开 `Result Details` / `Recent Runs` 查看调用、日志、产物与历史。错误与取消入口直接可见，MCP 设置及 Console 默认收起。
 
 ![Unity Autorun Tool 0.3.4 的 Autorun Scripts 面板](./Documentation~/images/autorun-scripts-0.3.4.png)
 

@@ -20,6 +20,7 @@ namespace UnityEditor
     {
         public static bool isCompiling;
         public static bool isUpdating;
+        public static double timeSinceStartup;
         public static event Action update;
         public static event Action quitting;
         public static void Tick() { update?.Invoke(); }
@@ -40,12 +41,26 @@ public sealed class AutoRunBridgeServer
     public static int SelectedPort = DefaultPort;
     public static int RequestedPort;
     public static int Starts;
+    public static int FailuresRemaining;
     public bool IsRunning { get; private set; }
     public int Port { get; private set; } = DefaultPort;
     public string Url => "http://127.0.0.1:" + Port + "/";
-    public void Start(int port) { RequestedPort = port; Port = SelectedPort; Starts++; IsRunning = true; }
+    public void Start(int port)
+    {
+        RequestedPort = port;
+        Starts++;
+        if (FailuresRemaining > 0) { FailuresRemaining--; throw new InvalidOperationException("Temporary startup failure"); }
+        Port = SelectedPort;
+        IsRunning = true;
+    }
     public void Stop() { IsRunning = false; }
     public AutoRunBridgeResponse Enqueue(string json) { return new AutoRunBridgeResponse(); }
 }
 
 public sealed class AutoRunBridgeResponse { }
+public enum AutoRunLogLevel { Warning }
+public static class AutoRunWindow
+{
+    public static int Warnings;
+    public static void AppendBridgeConsoleText(string text, AutoRunLogLevel level) { Warnings++; }
+}

@@ -6,7 +6,9 @@ Unity Autorun Tool automates Unity Editor workflows using reusable C# business s
 
 ## Recent updates (0.3.x)
 
-The current package version is **0.3.5**. Workflows now use compiled C# scripts with explicit starting conditions and observable assertions.
+The current package version is **0.3.6**. Workflows now use compiled C# scripts with explicit starting conditions and observable assertions.
+
+- `0.3.6`: Run summaries and errors follow the selected script; historical details never replace its latest status. Bridge startup failures retry in the background, and explicitly running a script restores the service automatically.
 
 - `0.3.5`: Bridge starts automatically with the editor and restores after reload. Retaining the legacy `_scriptSearch` serialized field prevents existing configuration windows from aborting before applying run parameters. Configuration generation, validation, and UPM release rules are clarified.
 
