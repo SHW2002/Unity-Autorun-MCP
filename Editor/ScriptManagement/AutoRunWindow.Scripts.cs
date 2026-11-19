@@ -190,10 +190,11 @@ public partial class AutoRunWindow
             .ThenBy(item => item.Label, StringComparer.OrdinalIgnoreCase))
         {
             AutoRunScriptDefinition definition = entry.Definition;
-            string label = entry.Label;
-            if (!string.IsNullOrEmpty(entry.DirectoryPath)) label += "  ·  " + entry.DirectoryPath.Replace("/", " › ");
-            // GenericMenu treats a slash as a submenu delimiter, even inside a script name.
-            var content = new GUIContent(label.Replace('/', '\u2215'), definition.Id + "\n" + definition.SourcePath);
+            // Use one submenu for the whole source directory, even when the directory has multiple levels.
+            string category = entry.DirectoryPath.Replace("/", " › ");
+            string label = entry.Label.Replace('/', '\u2215');
+            string menuPath = category.Length == 0 ? label : category + "/" + label;
+            var content = new GUIContent(menuPath, definition.Id + "\n" + definition.SourcePath);
             menu.AddItem(content, definition.Id == _selectedScriptId, () =>
             {
                 SelectScript(definition);
