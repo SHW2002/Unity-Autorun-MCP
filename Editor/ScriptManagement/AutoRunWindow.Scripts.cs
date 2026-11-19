@@ -28,6 +28,7 @@ public partial class AutoRunWindow
     private bool _scriptFilterDirty = true;
     private long _catalogRevision = -1;
     private long _runsRevision = -1;
+    private GUIStyle _scriptSelectorStyle;
     [SerializeField] private bool _showScriptDetails;
     [SerializeField] private bool _showScriptRunOptions;
     [SerializeField] private bool _showScriptRunDetails;
@@ -117,20 +118,23 @@ public partial class AutoRunWindow
         SynchronizeScriptSelection();
         BeginPanel("Autorun Scripts");
         AutoRunScriptDefinition selected = _scriptDefinitions.Find(definition => definition.Id == _selectedScriptId);
-        ResponsiveRow header = BeginResponsiveRow();
-        header.Add(250);
-        Rect selectorRect = EditorGUILayout.GetControlRect(false, EditorGUIUtility.singleLineHeight,
-            GUILayout.MinWidth(0), GUILayout.ExpandWidth(true));
-        Rect dropdownRect = EditorGUI.PrefixLabel(selectorRect, new GUIContent("Script"));
-        string selectionTooltip = selected == null ? "Choose a script from its directory."
-            : selected.Id + "\n" + selected.SourcePath;
+        if (_scriptSelectorStyle == null)
+        {
+            _scriptSelectorStyle = new GUIStyle(EditorStyles.popup) { fixedHeight = 0, wordWrap = true };
+        }
+        string selectionTooltip = selected == null ? "Choose a script."
+            : selected.Name + "\n" + selected.Id + "\n" + selected.SourcePath;
         var selectionLabel = new GUIContent(selected == null ? "Choose a script..." : selected.Name, selectionTooltip);
-        bool openPicker = GUI.Button(dropdownRect, selectionLabel, EditorStyles.popup);
-        header.Add(95);
+        Rect dropdownRect = GUILayoutUtility.GetRect(selectionLabel, _scriptSelectorStyle,
+            GUILayout.MinWidth(0), GUILayout.ExpandWidth(true));
+        bool openPicker = EditorGUI.DropdownButton(dropdownRect, selectionLabel, FocusType.Keyboard, _scriptSelectorStyle);
+
+        ResponsiveRow filters = BeginResponsiveRow();
+        filters.Add(95);
         _scriptKindFilter = EditorGUILayout.Popup(_scriptKindFilter, ScriptKindLabels, GUILayout.Width(95));
-        header.Add(70);
+        filters.Add(70);
         if (GUILayout.Button("Refresh", GUILayout.Width(70))) RefreshScriptDefinitions();
-        header.End();
+        filters.End();
 
         if (!string.IsNullOrEmpty(_scriptWindowError)) EditorGUILayout.HelpBox(_scriptWindowError, MessageType.Error);
         foreach (string error in _scriptCatalogErrors) EditorGUILayout.HelpBox(error, MessageType.Error);
@@ -180,16 +184,16 @@ public partial class AutoRunWindow
     private GenericMenu CreateScriptSelectionMenu()
     {
         UpdateScriptFilter();
-        var menu = new GenericMenu();
+        var menu = new GenericMenu { allowDuplicateNames = true };
         foreach (AutoRunScriptCatalogEntry entry in _filteredScriptTree.Scripts
             .OrderBy(item => item.DirectoryPath, StringComparer.OrdinalIgnoreCase)
             .ThenBy(item => item.Label, StringComparer.OrdinalIgnoreCase))
         {
             AutoRunScriptDefinition definition = entry.Definition;
-            // GenericMenu uses slash as its submenu delimiter; slashes in a display name belong to the leaf label.
-            string label = entry.Label.Replace('/', '\u2215');
-            string menuPath = string.IsNullOrEmpty(entry.DirectoryPath) ? label : entry.DirectoryPath + "/" + label;
-            var content = new GUIContent(menuPath, definition.Id + "\n" + definition.SourcePath);
+            string label = entry.Label;
+            if (!string.IsNullOrEmpty(entry.DirectoryPath)) label += "  ·  " + entry.DirectoryPath.Replace("/", " › ");
+            // GenericMenu treats a slash as a submenu delimiter, even inside a script name.
+            var content = new GUIContent(label.Replace('/', '\u2215'), definition.Id + "\n" + definition.SourcePath);
             menu.AddItem(content, definition.Id == _selectedScriptId, () =>
             {
                 SelectScript(definition);
