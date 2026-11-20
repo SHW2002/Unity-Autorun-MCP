@@ -70,9 +70,19 @@ namespace UnityAutorun.Mcp.Tests
         {
             int executes = 0, exits = 0;
             var child = new Probe(c => Count(() => executes++), c => "This route starts on the main screen.", (c, r) => exits++);
-            var runner = Runner(new FakeHost(), Definition("parent", new Probe(c => Parent(c, () => { })), "child"), Definition("child", child));
+            var parent = Definition("parent", new Probe(c => Parent(c, () => { })), "child");
+            parent.Preconditions = "Parent starting state.";
+            var childDefinition = Definition("child", child);
+            childDefinition.Preconditions = "The editor must be at the main screen.";
+            var runner = Runner(new FakeHost(), parent, childDefinition);
             string id = runner.Start("parent"); runner.Tick(0);
-            Assert(runner.GetStatus(id).Code == "precondition_failed" && executes == 0 && exits == 1, "wrong start has no execution");
+            var status = runner.GetStatus(id);
+            Assert(status.Code == "precondition_failed" && executes == 0 && exits == 1, "wrong start has no execution");
+            Assert(status.Message.Contains("This route starts on the main screen.")
+                && status.Message.Contains("Required start: " + childDefinition.Preconditions)
+                && !status.Message.Contains(parent.Preconditions)
+                && status.Message.Contains("exit Play Mode in that editor first"), "report preserves the failure and offers recovery for the failing script");
+            Assert(status.Logs.Contains(status.Message), "run logs include the complete failure");
         }
 
         private static void Cancellation()

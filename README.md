@@ -98,7 +98,7 @@ $run-script 运行刚才生成的背包脚本，验证最终 UI 状态
 
 `Autorun Scripts` 面板提供：
 
-默认只展示所选脚本、运行入口与简短结果。脚本选择框独占一行，长名称可以换行。点击选择框后，Unity 原生菜单按脚本所在目录分组。多级目录合并为一个分类名称，例如 `Multiplayer › HeldItems`，展开分类即可选择脚本。声明 `PreparePlayMode=true` 的脚本旁显示自动启动提示，停止状态按钮显示 `Start Game & Run`。其他脚本可用按钮旁的 `Start game first` 明确选择进入 Play Mode。运行中显示最近一条步骤日志，完成后向 Console 追加最终结果，失败原因直接显示。状态和错误仅对应当前选中脚本；切换脚本清除临时错误，历史记录仍可从 Recent Runs 主动打开。显式运行脚本会请求后台启动 Bridge，自动启动的短暂失败每 5 秒重试，不弹窗阻塞本地执行。展开 `Script Details` 查看完整描述、起点、源码和依赖树；展开 `Run Options` 配置参数与超时；展开 `Result Details` / `Recent Runs` 查看调用、日志、产物与历史。错误与取消入口直接可见，MCP 设置及 Console 默认收起。
+默认展示所选脚本、运行入口与结果。脚本选择框独占一行，长名称可以换行。点击选择框后，Unity 原生菜单按脚本所在目录分组。多级目录合并为一个分类名称，例如 `Multiplayer › HeldItems`，展开分类即可选择脚本。声明 `PreparePlayMode=true` 的脚本旁显示自动启动提示，停止状态按钮显示 `Start Game & Run`。其他脚本可用按钮旁的 `Start game first` 明确选择进入 Play Mode。运行中显示最近一条步骤日志，完成后向 Console 追加最终结果，失败原因直接显示。状态和错误仅对应当前选中脚本；切换脚本清除临时错误，历史记录仍可从 Recent Runs 主动打开。显式运行脚本会请求后台启动 Bridge，自动启动的短暂失败每 5 秒重试，不弹窗阻塞本地执行。展开 `Script Details` 查看完整描述、起点、源码和依赖树；展开 `Run Options` 配置参数与超时；展开 `Result Details` / `Recent Runs` 查看调用、日志、产物与历史。失败信息完整换行显示。前置条件失败会附上所需起点和恢复提示，可用 `Copy Failure Report` 复制运行 ID、错误码、调用栈、日志与产物路径。取消入口直接可见，MCP 设置及 Console 默认收起。
 
 ![Unity Autorun Tool 0.3.4 的 Autorun Scripts 面板](./Documentation~/images/autorun-scripts-0.3.4.png)
 

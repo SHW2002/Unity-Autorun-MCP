@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text;
 using UnityEditor;
 using UnityEngine;
 using UnityAutorun.Scripting;
@@ -384,11 +385,18 @@ public partial class AutoRunWindow
             + " | " + selected.ElapsedSeconds.ToString("0.0") + "s", GetWrappedStyle(EditorStyles.miniBoldLabel));
         string message = !selected.IsTerminal && selected.Logs.Count > 0
             ? selected.Logs[selected.Logs.Count - 1] : selected.Message ?? "";
-        string summary = message.Replace('\r', ' ').Replace('\n', ' ');
-        if (summary.Length > 100) summary = summary.Substring(0, 100) + "…";
         if (selected.State == AutoRunScriptRunState.Failed || selected.State == AutoRunScriptRunState.TimedOut)
-            EditorGUILayout.HelpBox(summary, MessageType.Error);
-        else GUILayout.Label(new GUIContent(summary, message), EditorStyles.miniLabel);
+        {
+            EditorGUILayout.HelpBox("[" + selected.Code + "] " + message, MessageType.Error);
+            if (GUILayout.Button("Copy Failure Report"))
+                EditorGUIUtility.systemCopyBuffer = BuildScriptRunReport(selected);
+        }
+        else
+        {
+            string summary = message.Replace('\r', ' ').Replace('\n', ' ');
+            if (summary.Length > 100) summary = summary.Substring(0, 100) + "…";
+            GUILayout.Label(new GUIContent(summary, message), EditorStyles.miniLabel);
+        }
         if (!selected.IsTerminal && GUILayout.Button("Cancel Run"))
         {
             _selectedScriptRunId = selected.RunId;
@@ -425,8 +433,12 @@ public partial class AutoRunWindow
         if (!_showScriptRunDetails) return;
         GUILayout.Label(selected.RunId + " | " + selected.Code, GetWrappedStyle(EditorStyles.miniLabel));
         GUILayout.Label(message, GetWrappedStyle(EditorStyles.label));
+        if (selected.IsTerminal && GUILayout.Button("Copy Run Report"))
+            EditorGUIUtility.systemCopyBuffer = BuildScriptRunReport(selected);
+        if (selected.CallStack.Count > 0)
+            GUILayout.Label("Call Stack: " + string.Join(" > ", selected.CallStack), GetWrappedStyle(EditorStyles.miniLabel));
         foreach (AutoRunScriptInvocation call in selected.Calls)
-            GUILayout.Label(new string(' ', call.Depth * 2) + call.ScriptId + " | " + call.State + " | " + call.Message, GetWrappedStyle(EditorStyles.miniLabel));
+            GUILayout.Label(FormatScriptInvocation(call), GetWrappedStyle(EditorStyles.miniLabel));
         foreach (string artifact in selected.Artifacts)
         {
             if (GUILayout.Button("Open artifact: " + artifact, GetWrappedStyle(GUI.skin.button)) && File.Exists(artifact)) EditorUtility.RevealInFinder(artifact);
@@ -434,5 +446,29 @@ public partial class AutoRunWindow
         _showScriptLogs = EditorGUILayout.Foldout(_showScriptLogs, "Run Logs (" + selected.Logs.Count + ")", true);
         if (_showScriptLogs)
             foreach (string log in selected.Logs) GUILayout.Label(log, GetWrappedStyle(EditorStyles.miniLabel));
+    }
+
+    private static string BuildScriptRunReport(AutoRunScriptRunStatus run)
+    {
+        var report = new StringBuilder();
+        report.AppendLine("Script: " + run.ScriptId);
+        report.AppendLine("Run ID: " + run.RunId);
+        report.AppendLine("Result: " + run.State + " [" + run.Code + "] (" + run.ElapsedSeconds.ToString("0.0") + "s)");
+        report.AppendLine(run.Message);
+        if (run.CallStack.Count > 0)
+            report.AppendLine("Call Stack: " + string.Join(" > ", run.CallStack));
+        report.AppendLine().AppendLine("Script Calls:");
+        foreach (AutoRunScriptInvocation call in run.Calls) report.AppendLine(FormatScriptInvocation(call));
+        report.AppendLine().AppendLine("Run Logs:");
+        foreach (string log in run.Logs) report.AppendLine(log);
+        report.AppendLine().AppendLine("Artifacts:");
+        foreach (string artifact in run.Artifacts) report.AppendLine(artifact);
+        return report.ToString();
+    }
+
+    private static string FormatScriptInvocation(AutoRunScriptInvocation call)
+    {
+        string code = string.IsNullOrEmpty(call.Code) ? "" : " [" + call.Code + "]";
+        return new string(' ', call.Depth * 2) + call.ScriptId + " | " + call.State + code + " | " + call.Message;
     }
 }

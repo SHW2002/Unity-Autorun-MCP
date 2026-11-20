@@ -146,7 +146,15 @@ namespace UnityAutorun.Scripting
                 {
                     frame.Initialized = true;
                     string error = frame.Script.CheckPreconditions(frame.Context);
-                    if (error != null) throw new AutoRunScriptException("precondition_failed", string.IsNullOrWhiteSpace(error) ? "Script preconditions were not met." : error);
+                    if (error != null)
+                    {
+                        string message = string.IsNullOrWhiteSpace(error) ? "Script preconditions were not met." : error;
+                        if (!string.IsNullOrWhiteSpace(frame.Definition.Preconditions))
+                            message += "\nRequired start: " + frame.Definition.Preconditions;
+                        message += "\nBefore retrying, restore the required start in the editor running this script."
+                            + " For a cold start, exit Play Mode in that editor first.";
+                        throw new AutoRunScriptException("precondition_failed", message);
+                    }
                     IEnumerator enumerator = frame.Script.Execute(frame.Context);
                     if (enumerator != null) frame.Enumerators.Push(enumerator);
                 }
@@ -266,6 +274,7 @@ namespace UnityAutorun.Scripting
         private void FailFromException(Run run, Exception exception)
         {
             var scriptException = exception as AutoRunScriptException;
+            if (scriptException == null) AppendLog(run, exception.ToString());
             Finish(run, AutoRunScriptRunState.Failed, scriptException == null ? "script_exception" : scriptException.Code,
                 exception.GetType().Name + ": " + exception.Message);
         }
