@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using UnityAutorun.Recording;
 
 [Serializable]
 public sealed class AutoRunBridgeRequest
@@ -23,6 +24,10 @@ public sealed class AutoRunBridgePayload
     public string targetViewId;
     public string scriptId;
     public string runId;
+    public string recordingId;
+    public string recordingPath;
+    public int recordingFps = 30;
+    public int recordingMaxSeconds = 60;
     public string kind;
     public string parametersJson;
     public bool includeSource = true;
@@ -79,6 +84,7 @@ public sealed class AutoRunBridgeData
     public List<AutoRunBridgeScriptInfo> scripts = new();
     public AutoRunBridgeScriptInfo script;
     public AutoRunBridgeScriptRun scriptRun;
+    public AutoRunRecordingStatus recording;
     public List<string> catalogErrors = new();
     public bool terminal;
     public long elapsedMilliseconds;

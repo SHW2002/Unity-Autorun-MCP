@@ -34,6 +34,8 @@ Use `list_scripts` and `get_script(includeSource=true)` to review candidate depe
 
 ## Exit and report
 
+When the user requests video evidence, prefer Unity Autorun's built-in Game View recorder. In unpaused Play Mode with the Game View visible, call `start_recording` with a UUID and poll `get_recording_status` until `data.recording.state=recording` before the actions to capture. Stop with `stop_recording` using the same UUID, including after a failed self-test. Report `data.recording.outputPath` after state `completed`. If recording is unavailable, report the blocker. Keep recording orchestration outside the generated business code.
+
 Success, failure, timeout, and cancellation preserve the current game state and Play Mode. `OnExit` releases only resources, subscriptions, or temporary objects owned by the script. Do not reset scenes, navigate back, or stop Play Mode automatically; use an explicit requested stop action when applicable.
 
 Report the script ID/source, declared start, parameters, reused dependencies, compilation outcome, self-test result, concrete assertion evidence, and any unresolved failure. A compiler failure, wrong starting state, or exhausted repair budget is an unfinished result, not success.

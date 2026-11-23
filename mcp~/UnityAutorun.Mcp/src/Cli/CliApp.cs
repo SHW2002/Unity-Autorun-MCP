@@ -51,6 +51,20 @@ namespace UnityAutorun.Mcp
                     tool = "run_sequence";
                     payload["actions"] = JsonNode.Parse(ReadJson(args, "--json", "--json-file", "[]"));
                     break;
+                case "start-recording":
+                    tool = "start_recording";
+                    payload = JsonUtil.Obj(("recordingId", Read(args, "--recording")),
+                        ("path", Read(args, "--path")), ("fps", ReadInt(args, "--fps", 30)),
+                        ("maxSeconds", ReadInt(args, "--max-seconds", 60)));
+                    break;
+                case "recording-status":
+                    tool = "get_recording_status";
+                    payload["recordingId"] = Read(args, "--recording");
+                    break;
+                case "stop-recording":
+                    tool = "stop_recording";
+                    payload["recordingId"] = Read(args, "--recording");
+                    break;
                 case "script-guidance": tool = "get_script_guidance"; break;
                 case "list-scripts":
                     tool = "list_scripts";
@@ -141,6 +155,9 @@ namespace UnityAutorun.Mcp
                 + "  wait-ui-state --query Path [--property value] [--comparison equals] [--expected Value] [--timeout-ms 10000]\n"
                 + "  click [--name Name] [--text Text] [--framework ugui|fairygui]\n"
                 + "  run-sequence --json-file actions.json\n"
+                + "  start-recording --recording UUID [--path ProjectRelative.mp4] [--fps 30] [--max-seconds 60]\n"
+                + "  recording-status --recording UUID\n"
+                + "  stop-recording --recording UUID\n"
                 + "  script-guidance\n"
                 + "  list-scripts [--kind business|basic|all] [--query Text]\n"
                 + "  get-script --script ScriptId [--include-source true|false]\n"

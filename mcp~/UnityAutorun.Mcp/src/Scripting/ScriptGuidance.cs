@@ -36,6 +36,7 @@ namespace UnityAutorun.Mcp
                         "Run the generated script with start_script using an explicit starting state and parameters. Reuse runId only for transport retries of that same execution; use a fresh runId for every new self-test, especially after code repairs. Poll get_script_status until terminal=true.",
                         "After edit-script changes, refresh and verify compilation, registration and dependencies; self-test the modified script with a new runId and regression-test affected callers from their declared starting states. Do not weaken preconditions or assertions to hide failure. Report any self-test or caller regression that could not run as unverified, with its actual blocker.",
                         "Prove success with a final observable UI/project-state assertion and inspect logs/artifacts. Compilation or a successful button click alone does not prove the goal.",
+                        "For requested video evidence, prefer the built-in recorder. In unpaused Play Mode with Game View visible, use start_recording with a UUID, wait for get_recording_status data.recording.state=recording, run the actions, then call stop_recording with that UUID. Report outputPath when state=completed. Keep recording orchestration outside business code and report any missing coverage.",
                         "If the self-test cannot run because Unity/bridge/project is unavailable, report that limitation; do not claim the script is verified."
                     }),
                     ("contract", JsonUtil.Obj(

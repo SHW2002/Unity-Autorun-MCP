@@ -87,6 +87,7 @@ public partial class AutoRunWindow : EditorWindow
 
         GUILayout.BeginVertical(GUILayout.Width(GetWindowContentWidth()), GUILayout.ExpandWidth(false));
         RenderScriptPanel();
+        RenderRecordingPanel();
         RenderMcpPanel();
         RenderConsole();
 

@@ -140,6 +140,10 @@ public sealed partial class AutoRunBridgeDispatcher
                 return GetScriptStatus(request);
             case "cancel_script":
                 return CancelScript(request);
+            case "start_recording":
+            case "get_recording_status":
+            case "stop_recording":
+                return ExecuteRecording(request);
             default:
                 return AutoRunBridgeResponses.Fail(request.id, "unknown_command", $"Unknown command: {request.command}");
         }

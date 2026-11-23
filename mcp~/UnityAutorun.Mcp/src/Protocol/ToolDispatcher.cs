@@ -45,6 +45,13 @@ namespace UnityAutorun.Mcp
                         ("name", Text(args, "name")), ("text", Text(args, "text")),
                         ("framework", Text(args, "framework", "ugui"))));
                     case "run_sequence": return await _call(name, JsonUtil.Obj(("actions", args["actions"]?.DeepClone() ?? new JsonArray())));
+                    case "start_recording":
+                        return await _call(name, JsonUtil.Obj(("recordingId", Required(args, "recordingId")),
+                            ("recordingPath", Text(args, "path")), ("recordingFps", Int(args, "fps", 30)),
+                            ("recordingMaxSeconds", Int(args, "maxSeconds", 60))));
+                    case "get_recording_status":
+                    case "stop_recording":
+                        return await _call(name, JsonUtil.Obj(("recordingId", Required(args, "recordingId"))));
                     case "get_script_guidance": return ScriptGuidance.Get();
                     case "create_script": return ScriptFiles.Create(args);
                     case "list_scripts": return await _call(name, JsonUtil.Obj(

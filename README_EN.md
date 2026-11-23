@@ -6,7 +6,9 @@ Unity Autorun Tool automates Unity Editor workflows using reusable C# business s
 
 ## Recent updates (0.3.x)
 
-The current package version is **0.3.7**. Workflows now use compiled C# scripts with explicit starting conditions and observable assertions.
+The current package version is **0.3.11**. Workflows use compiled C# scripts with explicit starting conditions and observable assertions.
+
+- `0.3.11` adds built-in Game View recording from the editor, MCP, and CLI. It saves silent, watermarked MP4 files. The three script Skills prefer it for requested video evidence.
 
 - `0.3.7`: Align UPM package metadata with the Bridge and MCP versions, including the script-result and service-recovery fixes from 0.3.6.
 
@@ -190,6 +192,14 @@ The `screenshot` basic script requires Play Mode and a rendering Game View. It w
 Before each default capture, cleanup removes temporary files last written more than **24 hours** ago and makes room for the new image, aiming to keep the latest **20 files**. The next default capture triggers cleanup. Locked files or insufficient permissions can leave files behind, and temporary artifact paths in run history may become unavailable after later cleanup.
 
 For documentation, regression comparisons, or long-term evidence, explicitly pass a project-relative `.png` path outside the tool's temporary directory, such as `AutorunEvidence/inventory-20261015.png`. These paths are not included in that cleanup. An existing destination fails rather than being overwritten, so choose a new filename. The old `AutorunToolData/Screenshots/` directory is not automatically migrated or cleaned.
+
+## Game View recording
+
+In Play Mode, keep the Game View tab visible. Open `Window > Auto Run Window`, expand `Game View Recording`, and select `Start Recording`. Dock the windows side by side if they share a tab group. Select `Stop & Save MP4` when done. The silent MP4 burns the right-aligned `UNITY AUTORUN` and `Produced by Hanwen` watermark into each frame's bottom-right corner in translucent, bold white lettering. A thin black strip along the bottom shows the centered GitHub address `https://github.com/SHW2002/Unity-Autorun-MCP` in white.
+
+When a script needs video evidence, prefer `start_recording` with a caller-generated UUID as `recordingId`. Check `get_recording_status` until `data.recording.state` is `recording` before performing the actions, then call `stop_recording` with the same ID. When the state is `completed`, `data.recording.outputPath` is the saved video. One recording can run at a time. Stopping the recording preserves Play Mode. Leaving Play Mode, changing the Game View resolution, or reaching the duration limit attempts to save the frames already captured.
+
+Recording defaults to 30 fps and a 60-second limit. Files are saved under the project's `Temp/UnityAutorunTool/Recordings/` by default. MCP accepts a project-relative `.mp4` path, `fps` (1–60), and `maxSeconds` (1–600). The same tools are available from the CLI as `start-recording --recording UUID`, `recording-status --recording UUID`, and `stop-recording --recording UUID`.
 
 ## MCP and CLI
 

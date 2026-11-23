@@ -28,6 +28,8 @@ Read candidate callers' source and dependency metadata to determine which direct
 
 ## Exit and report
 
+When the user requests video evidence for a self-test or regression, prefer Unity Autorun's built-in Game View recorder. In unpaused Play Mode with the Game View visible, call `start_recording` with a UUID and poll `get_recording_status` until `data.recording.state=recording` before the actions to capture. Stop with `stop_recording` using the same UUID, including after a failed run. Report `data.recording.outputPath` after state `completed`. If recording is unavailable, report the blocker. Keep recording orchestration outside the edited business code.
+
 Success, failure, timeout and cancellation preserve the current game state and Play Mode. `OnExit` cleans only owned resources, subscriptions or temporary objects; it must tolerate partial initialization. A requested stop is a separate explicit action.
 
 Report the changed script ID/source and implementation, preserved start/flow/parameters/results, affected callers, actual compilation outcome, each self-test/regression `runId` and concrete assertion evidence. Distinguish verified runs, failed runs and callers that could not be tested. Missing evidence, compilation failure or an exhausted repair budget is not success.

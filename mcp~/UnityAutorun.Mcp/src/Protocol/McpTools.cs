@@ -18,6 +18,9 @@ namespace UnityAutorun.Mcp
                 Tool("wait_for_ui_state", "Wait until a filtered UI property satisfies a comparison; prefer observable assertions to fixed sleeps.", ("query", "string"), ("scope", "string"), ("exact", "boolean"), ("types", StringArray()), ("property", "string"), ("comparison", Enum("exists", "notExists", "equals", "notEquals", "contains", "notContains", "startsWith", "endsWith", "greaterThan", "greaterThanOrEqual", "lessThan", "lessThanOrEqual", "isEmpty", "isNotEmpty")), ("expected", "string"), ("timeoutMs", "integer"), ("pollMs", "integer"), ("limit", "integer"), ("includeInactive", "boolean"), ("includeSensitive", "boolean")),
                 Tool("click_button", "Click a Unity UI button by name or text.", ("name", "string"), ("text", "string"), ("framework", Enum("ugui", "fairygui"))),
                 Tool("run_sequence", "Run a sequence of AutoRun button actions.", ("actions", "array")),
+                Tool("start_recording", "Start Unity Autorun's built-in Game View recording in unpaused Play Mode with the Game View visible. Saves silent, watermarked MP4. Poll get_recording_status until state=recording before actions to capture. Use a caller-generated UUID for safe retries. Optional path is a project-relative .mp4; defaults to Temp/UnityAutorunTool/Recordings. fps defaults to 30 (1–60); maxSeconds defaults to 60 (1–600).", ("recordingId", "string"), ("path", "string"), ("fps", "integer"), ("maxSeconds", "integer")),
+                Tool("get_recording_status", "Read data.recording by UUID. Report outputPath as saved evidence only when state=completed.", ("recordingId", "string")),
+                Tool("stop_recording", "Stop and finalize this Game View recording by UUID. Leaves Play Mode and game state intact. Returns the final recording state and output path.", ("recordingId", "string")),
                 Tool("get_script_guidance", "Get the current C# script contract, generation template, built-in IDs, source path, self-test routing and strict reuse/edit rules. Read before using gen-script, edit-script or run-script."),
                 Tool("list_scripts", "List compiled business and basic scripts, root preparePlayMode metadata, declared dependencies and validation errors. Before game/UI self-tests, find an existing valid matching flow and inspect it with get_script; run it directly. Do not silently create missing self-test scripts. Unavailable calls do not mean no script exists.", ("kind", Enum("business", "basic", "all")), ("query", "string")),
                 Tool("get_script", "Get compiled script metadata, including root preparePlayMode, and optionally its source. Inspect preconditions and the complete flow before reusing a script.", ("scriptId", "string"), ("includeSource", "boolean")),
@@ -32,6 +35,9 @@ namespace UnityAutorun.Mcp
             Require(tools, "start_script", "scriptId");
             Require(tools, "get_script_status", "runId");
             Require(tools, "cancel_script", "runId");
+            Require(tools, "start_recording", "recordingId");
+            Require(tools, "get_recording_status", "recordingId");
+            Require(tools, "stop_recording", "recordingId");
             return tools;
         }
 

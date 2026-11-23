@@ -6,7 +6,9 @@ Unity Autorun Tool 是一个 Unity Editor 自动化工具。外部 AI 根据宿�
 
 ## 近期更新（0.3.x）
 
-当前包版本为 **0.3.7**，工作流已经统一为可编译、可检查起点和断言的 C# 脚本。
+当前包版本为 **0.3.11**，工作流使用可编译、可检查起点和断言的 C# 脚本。
+
+- `0.3.11`：新增 Game View 内置录屏，可通过编辑器、MCP 和 CLI 输出带水印的无声 MP4。三个脚本 Skill 在需要视频证据时优先使用内录。
 
 - `0.3.7`：补齐 UPM 包版本元数据，使包、Bridge 和 MCP 版本一致，包含 0.3.6 的脚本结果与服务自动恢复修复。
 
@@ -192,6 +194,14 @@ uGUI 按钮必须提供名称或文本，观测到的层级路径/范围用于�
 每次默认截图前会清理该临时目录：按最后写入时间删除超过 **24 小时**的文件，并为新图腾出位置，尽量保留最新 **20 份**。清理由下一次默认截图触发；占用或权限问题可能使部分文件暂时保留，历史运行中的临时产物路径也可能在后续清理后失效。
 
 需要提交文档、比较回归或长期保存时，为 `screenshot` 显式传入工具临时目录外的项目相对 `.png` 路径，例如 `AutorunEvidence/inventory-20261015.png`。这类路径不参与上述自动清理；目标已存在会失败，需使用新的文件名。旧版本的 `AutorunToolData/Screenshots/` 不会自动迁移或清理。
+
+## Game View 录屏
+
+进入 Play Mode 并保持 Game View 标签可见，在 `Window > Auto Run Window` 展开 `Game View Recording`，点击 `Start Recording`，完成操作后选择 `Stop & Save MP4`。如果两个面板共用一组标签页，可将它们并排停靠。视频为无声 MP4，每帧右下角烧录右对齐的 `UNITY AUTORUN` 和 `Produced by Hanwen` 双行水印，使用半透明白色粗体。最底部的细黑条居中显示白色 GitHub 地址 `https://github.com/SHW2002/Unity-Autorun-MCP`。
+
+脚本需要视频证据时，优先用 MCP 的 `start_recording`，传入自建 UUID 作为 `recordingId`。用 `get_recording_status` 确认 `data.recording.state` 为 `recording` 后执行操作，再用相同 ID 调用 `stop_recording`。当状态为 `completed` 时，`data.recording.outputPath` 是已保存的视频路径。录屏最多同时运行一个，手动停止录屏不会退出 Play Mode。退出 Play Mode、改变 Game View 分辨率或达到时限会尝试保存已录制的帧。
+
+默认以 30 fps 录制，最长 60 秒，输出到宿主项目的 `Temp/UnityAutorunTool/Recordings/`。MCP 支持指定工程内的相对 `.mp4` 路径、`fps`（1–60）和 `maxSeconds`（1–600）。CLI 可用 `start-recording --recording UUID`、`recording-status --recording UUID` 和 `stop-recording --recording UUID`。
 
 ## MCP 与 CLI
 

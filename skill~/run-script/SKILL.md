@@ -17,4 +17,6 @@ Call `start_script` once with an explicit script ID, string-valued parameters, a
 
 Inspect final assertions, dependency calls, logs, and artifacts. Finishing a sequence of actions does not prove a requested UI result. Use narrow `get_ui_state` or `wait_for_ui_state` queries for extra requested assertions. Review pixels or layout only from actual visual evidence, not structured UIState values.
 
+When the user requests video evidence, prefer Unity Autorun's built-in Game View recorder. In unpaused Play Mode with the Game View visible, call `start_recording` with a UUID and poll `get_recording_status` until `data.recording.state=recording` before the actions to capture. Stop with `stop_recording` using the same UUID, including after a failed run. Report `data.recording.outputPath` after state `completed`. If the requested starting conditions prevent recording the first action or the recorder is unavailable, report the gap and preserve the script's declared flow.
+
 Success, failure, cancellation, and timeout leave the current game state and Play Mode intact. Stop Play Mode only through an explicit requested action. Never modify any script, dependency, or project code in this workflow. Report the script/run IDs, starting conditions, parameter values relevant to the task, state/result code, observed assertions, artifacts, and unresolved failures.
