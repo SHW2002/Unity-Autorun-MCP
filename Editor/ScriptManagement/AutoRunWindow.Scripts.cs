@@ -23,7 +23,7 @@ public partial class AutoRunWindow
     private List<string> _scriptCatalogErrors = new List<string>();
     private List<AutoRunScriptRunStatus> _scriptRuns = new List<AutoRunScriptRunStatus>();
     private readonly HashSet<string> _collapsedScriptNodes = new HashSet<string>();
-    private static readonly string[] ScriptKindLabels = { "All", "Business", "Basic" };
+    private static readonly string[] ScriptKindLabels = { "全部", "业务", "基础" };
     private AutoRunScriptCatalogTree _filteredScriptTree;
     private int _cachedScriptKind = -1;
     private bool _scriptFilterDirty = true;
@@ -123,9 +123,9 @@ public partial class AutoRunWindow
         {
             _scriptSelectorStyle = new GUIStyle(EditorStyles.popup) { fixedHeight = 0, wordWrap = true };
         }
-        string selectionTooltip = selected == null ? "Choose a script."
+        string selectionTooltip = selected == null ? "选择一个脚本。"
             : selected.Name + "\n" + selected.Id + "\n" + selected.SourcePath;
-        var selectionLabel = new GUIContent(selected == null ? "Choose a script..." : selected.Name, selectionTooltip);
+        var selectionLabel = new GUIContent(selected == null ? "选择脚本…" : selected.Name, selectionTooltip);
         Rect dropdownRect = GUILayoutUtility.GetRect(selectionLabel, _scriptSelectorStyle,
             GUILayout.MinWidth(0), GUILayout.ExpandWidth(true));
         bool openPicker = EditorGUI.DropdownButton(dropdownRect, selectionLabel, FocusType.Keyboard, _scriptSelectorStyle);
@@ -187,22 +187,19 @@ public partial class AutoRunWindow
         UpdateScriptFilter();
         var menu = new GenericMenu { allowDuplicateNames = true };
         foreach (AutoRunScriptCatalogEntry entry in _filteredScriptTree.Scripts
-            .OrderBy(item => item.DirectoryPath, StringComparer.OrdinalIgnoreCase)
+            .OrderBy(item => item.MenuCategory, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(item => item.MenuCategory, StringComparer.Ordinal)
             .ThenBy(item => item.Label, StringComparer.OrdinalIgnoreCase))
         {
             AutoRunScriptDefinition definition = entry.Definition;
-            // Use one submenu for the whole source directory, even when the directory has multiple levels.
-            string category = entry.DirectoryPath.Replace("/", " › ");
-            string label = entry.Label.Replace('/', '\u2215');
-            string menuPath = category.Length == 0 ? label : category + "/" + label;
-            var content = new GUIContent(menuPath, definition.Id + "\n" + definition.SourcePath);
+            var content = new GUIContent(entry.MenuPath, definition.Id + "\n" + definition.SourcePath);
             menu.AddItem(content, definition.Id == _selectedScriptId, () =>
             {
                 SelectScript(definition);
                 Repaint();
             });
         }
-        if (_filteredScriptTree.Scripts.Count == 0) menu.AddDisabledItem(new GUIContent("No matching scripts"));
+        if (_filteredScriptTree.Scripts.Count == 0) menu.AddDisabledItem(new GUIContent("没有匹配的脚本"));
         return menu;
     }
 

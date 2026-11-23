@@ -1,18 +1,19 @@
 # Script directory categories
 
 Click the Script selector in the Auto Run window to open Unity's native selection
-menu. The main window shows only the selected script and its controls; source
-directories become cascading submenus. The selected script is checked, and
+menu. The main window shows the selected script and its controls. The menu has
+two levels, a business category and its scripts. The selected script is checked, and
 choosing a menu item updates the selection and closes the menu.
 
-The menu groups registered scripts by their source directory below
-`Assets/Editor/AutorunScripts`, with compatibility for `Assets/AutorunScripts/Editor`.
-No extra category attribute is required. Scripts at the root and sources outside these roots remain
-available. Package built-ins are grouped under Basic.
+The first directory below `Assets/Editor/AutorunScripts` supplies the category,
+with compatibility for `Assets/AutorunScripts/Editor`. For example, a script in
+`Assets/Editor/AutorunScripts/牵手/游泳` appears directly under `牵手`. Make the
+first directory a short business name such as `启动` or `衣柜`. The menu uses
+`其他` for business scripts without a category directory and `基础` for basic
+scripts without a category directory, including package built-ins.
 
-Directory navigation uses Unity's native submenu interaction, with no custom
-file-tree popup. Type filtering applies independently of directory grouping, so project-defined
-Basic scripts keep their actual source directory.
+Type filtering applies independently of directory grouping, so project-defined
+basic scripts can use the same business categories.
 
 Selecting a script retains its ID, parameter editor, configuration menu, details
 and execution controls. Categories refresh with the script catalog; the window

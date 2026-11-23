@@ -23,7 +23,10 @@ namespace UnityAutorun.Scripting
                 string group = directory != null ? null : definition.Kind == AutoRunScriptKind.Basic ? "Basic" : "Other";
                 string displayDirectory = group ?? directory;
                 if (!Matches(definition, displayDirectory, query)) continue;
-                var entry = new AutoRunScriptCatalogEntry(definition, displayDirectory);
+                string menuCategory = string.IsNullOrEmpty(directory)
+                    ? (definition.Kind == AutoRunScriptKind.Basic ? "基础" : "其他")
+                    : directory.Split('/')[0];
+                var entry = new AutoRunScriptCatalogEntry(definition, displayDirectory, menuCategory);
                 tree.Scripts.Add(entry);
                 string name = definition.Name ?? definition.Id ?? "";
                 int count;
@@ -152,12 +155,15 @@ namespace UnityAutorun.Scripting
     {
         public readonly AutoRunScriptDefinition Definition;
         public readonly string DirectoryPath;
+        public readonly string MenuCategory;
         public string Label;
+        public string MenuPath { get { return MenuCategory + "/" + Label.Replace('/', '\u2215'); } }
 
-        internal AutoRunScriptCatalogEntry(AutoRunScriptDefinition definition, string directoryPath)
+        internal AutoRunScriptCatalogEntry(AutoRunScriptDefinition definition, string directoryPath, string menuCategory)
         {
             Definition = definition;
             DirectoryPath = directoryPath;
+            MenuCategory = menuCategory;
         }
     }
 }

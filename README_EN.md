@@ -6,7 +6,9 @@ Unity Autorun Tool automates Unity Editor workflows using reusable C# business s
 
 ## Recent updates (0.3.x)
 
-The current package version is **0.3.11**. Workflows use compiled C# scripts with explicit starting conditions and observable assertions.
+The current package version is **0.3.12**. Workflows use compiled C# scripts with explicit starting conditions and observable assertions.
+
+- `0.3.12` simplifies the script picker to two levels: business category and script. Filter labels and default categories are in Chinese.
 
 - `0.3.11` adds built-in Game View recording from the editor, MCP, and CLI. It saves silent, watermarked MP4 files. The three script Skills prefer it for requested video evidence.
 
@@ -100,7 +102,7 @@ All three Skills allow normal automatic discovery and explicit `$gen-script`, `$
 
 The `Autorun Scripts` panel includes:
 
-The default view shows the selected script, the run action, and a short result. The script selector spans the full row and wraps long names. The native Unity menu groups scripts by source directory. A nested directory appears as a single category, such as `Multiplayer › HeldItems`. Open the category to select a script. Scripts declaring `PreparePlayMode=true` show an automatic startup hint and `Start Game & Run` in Edit Mode. Other scripts expose `Start game first` beside the run action. Active runs show their latest step log; completed runs append their final result to Console, and failures are shown directly. Expand `Script Details` for descriptions, starting conditions, sources, and dependencies; `Run Options` for parameters and timeout; and `Result Details` / `Recent Runs` for calls, logs, artifacts, and history. Errors and cancellation remain visible. MCP settings and Console start collapsed.
+The default view shows the selected script, the run action, and a short result. The script selector spans the full row and wraps long names. The native Unity menu uses the first directory below the script root as a business category and lists scripts directly inside it. For example, scripts in `牵手/游泳` appear under `牵手`. Scripts declaring `PreparePlayMode=true` show an automatic startup hint and `Start Game & Run` in Edit Mode. Other scripts expose `Start game first` beside the run action. Active runs show their latest step log; completed runs append their final result to Console, and failures are shown directly. Expand `Script Details` for descriptions, starting conditions, sources, and dependencies; `Run Options` for parameters and timeout; and `Result Details` / `Recent Runs` for calls, logs, artifacts, and history. Errors and cancellation remain visible. MCP settings and Console start collapsed.
 
 ![Unity Autorun Tool 0.3.4 Autorun Scripts panel](./Documentation~/images/autorun-scripts-0.3.4.png)
 

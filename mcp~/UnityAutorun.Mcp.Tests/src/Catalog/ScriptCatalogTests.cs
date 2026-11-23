@@ -15,6 +15,7 @@ namespace UnityAutorun.Mcp.Tests
             yield return ("script category search matches directories metadata and kind without losing ancestors", Search);
             yield return ("script labels distinguish repeated names by stable ID", DuplicateNames);
             yield return ("host basic scripts retain directories while kind filters remain accurate", HostBasicDirectories);
+            yield return ("script menu uses one business category above each script", MenuPaths);
         }
 
         private static void SupportedRoots()
@@ -117,6 +118,29 @@ namespace UnityAutorun.Mcp.Tests
             AutoRunScriptCatalogTree business = AutoRunScriptCatalogTree.Build(definitions, "/project", null, AutoRunScriptKind.Business);
             Equal("business", business.Scripts.Single().Definition.Id);
             Equal("Validation", business.Root.Children.Single().Children.Single().Name);
+        }
+
+        private static void MenuPaths()
+        {
+            AutoRunScriptDefinition first = Definition("a", "/project/Assets/Editor/AutorunScripts/牵手/游泳/双端/A.cs");
+            AutoRunScriptDefinition second = Definition("b", "/project/Assets/AutorunScripts/Editor/牵手/滑冰/B.cs");
+            first.Name = second.Name = "主端 / 客体";
+            var definitions = new[]
+            {
+                first, second,
+                Definition("root", "Assets/Editor/AutorunScripts/Root.cs"),
+                Definition("unknown", null),
+                Definition("builtin", "Packages/tool/Basic.cs", AutoRunScriptKind.Basic),
+                Definition("host-basic", "Assets/Editor/AutorunScripts/音频/录音/Audio.cs", AutoRunScriptKind.Basic)
+            };
+            var paths = AutoRunScriptCatalogTree.Build(definitions, "/project").Scripts
+                .ToDictionary(entry => entry.Definition.Id, entry => entry.MenuPath);
+            Equal("牵手/主端 ∕ 客体 [a]", paths["a"]);
+            Equal("牵手/主端 ∕ 客体 [b]", paths["b"]);
+            Equal("其他/root", paths["root"]);
+            Equal("其他/unknown", paths["unknown"]);
+            Equal("基础/builtin", paths["builtin"]);
+            Equal("音频/host-basic", paths["host-basic"]);
         }
 
         private static IEnumerable<AutoRunScriptCatalogEntry> Flatten(AutoRunScriptCategory category)
