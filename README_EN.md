@@ -6,7 +6,9 @@ Unity Autorun Tool automates Unity Editor workflows using reusable C# business s
 
 ## Recent updates (0.3.x)
 
-The current package version is **0.3.12**. Workflows use compiled C# scripts with explicit starting conditions and observable assertions.
+The current package version is **0.3.13**. Workflows use compiled C# scripts with explicit starting conditions and observable assertions.
+
+- `0.3.13` fixes upside-down Game View recordings by correcting frame orientation before applying the watermark.
 
 - `0.3.12` simplifies the script picker to two levels: business category and script. Filter labels and default categories are in Chinese.
 

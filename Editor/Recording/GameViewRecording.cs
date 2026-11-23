@@ -78,7 +78,11 @@ namespace UnityAutorun.Recording
             try
             {
                 GL.sRGBWrite = QualitySettings.activeColorSpace == ColorSpace.Linear;
-                Graphics.Blit(source, target);
+                // Match Game View's display orientation before adding overlays in texture coordinates.
+                if (SystemInfo.graphicsUVStartsAtTop)
+                    Graphics.Blit(source, target, new Vector2(1f, -1f), new Vector2(0f, 1f));
+                else
+                    Graphics.Blit(source, target);
                 RenderTexture.active = target;
                 _pixels.ReadPixels(new Rect(0, 0, Width, Height), 0, 0, false);
             }
